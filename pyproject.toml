@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "adversarial-eval"
+version = "0.4.0"
+description = "Cheating agent + cheating reviewer for Harbor terminal tasks (plus optional CheatBench track)"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+data = ["huggingface_hub>=0.25", "pyarrow>=17"]
+test = ["pytest>=8"]
+
+[project.scripts]
+adversarial = "adversarial.cli:main"
+cheat-agent = "adversarial.cli:main_cheat_agent"
+cheat-review = "adversarial.cli:main_cheat_review"
+ot-adversarial = "adversarial.real_eval:main"
+
+[tool.setuptools.packages.find]
+include = ["adversarial*"]

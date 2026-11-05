@@ -1,0 +1,36 @@
+# Local env / secrets
+.env
+.env.*
+!.env.example
+**/harbor_stress_auth.json
+**/*credentials*
+**/*secret*
+
+# Python
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Local Harbor / bootstrap / experiment artifacts (re-bootstrap or re-run)
+work/
+jobs/
+
+# Scratch logs & local notes
+*.log
+*.pid
+*.console.log
+.DS_Store
+
+# Optional local archives (keep out of the public tree)
+archive/
+docs/archive/
+
+# Editor / OS
+.idea/
+.vscode/
+*.swp
+*~
