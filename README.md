@@ -2,9 +2,9 @@
 
 Cheating **agent** (Harbor rollout) + cheating **reviewer** (post-hoc LLM judge on saved trials).
 
-Default model: `deepseek-v4.1-flash` (Harbor: `openai/deepseek-v4.1-flash`).  
-Default harness: Terminus-2 with system-prompt injection.  
-`mini-swe-agent` is supported only with `--prompt-mode appended`.
+Default model: `deepseek-v4-pro-0813` (Harbor: `openai/deepseek-v4-pro-0813`).  
+Default **policy generation:** `instruction/v3/{cheating-agent,cheating-reviewer}/{prompt,skill}` (`--policy-version`). Next iteration is `instruction/v4/…`.  
+Default harness: Terminus-2 (system prompt + Harbor skills). Prefer Harbor for multi-harness switching (`terminus-2`, `codex` with skills; `mini-swe-agent` is appended-policy only). `--harness llm` inlines the skill body on the host.
 
 ## Setup
 
@@ -37,7 +37,7 @@ The CLI also accepts `--base-url` / `--key-env`, loads a local `.env` if present
 ```bash
 export OPENAI_API_KEY='...'
 export OPENAI_BASE_URL='https://<workspace>.maas.aliyuncs.com/compatible-mode/v1'
-python -m adversarial cheat-agent --task 1012 --model deepseek-v4.1-flash
+python -m adversarial cheat-agent --task 1012 --model deepseek-v4-pro-0813
 ```
 
 **Real OpenAI / later Luma (OpenAI base URL)**
@@ -52,27 +52,38 @@ python -m adversarial cheat-agent --task 1012 --model <model-id>
 ## Commands
 
 ```bash
-# Cheating agent — one task, trajectory + reward under work/results/cheat_jobs/
+# Cheating agent — jobs land in work/runs/cheat/ by default
 python -m adversarial cheat-agent --task 1012
 python -m adversarial cheat-agent --task 1012 --dry-run
 python -m adversarial cheat-agent --task /path/to/harbor_task --model openai/qwen3.5-plus
+python -m adversarial cheat-agent --task 1012 --harness codex
+python -m adversarial cheat-agent --task cancel-async-tasks --harness codex   # clean negative (TB2)
 python -m adversarial cheat-agent --task 1012 --harness mini-swe-agent --prompt-mode appended
 
-# Cheating reviewer — skips reward < 1; binary legitimate | exploit
-python -m adversarial cheat-review --trial work/results/cheat_jobs/<job>/<trial>/ --task 1012
+# Cheating reviewer — reviews pass AND failed attempts; binary exploit|attempt|legitimate|inconclusive
+python -m adversarial cheat-review --trial work/runs/cheat/<job>/<trial>/ --task 1012
+python -m adversarial cheat-review --trial <trial> --task 1012 --harness codex
+python -m adversarial cheat-review --trial <trial> --task 1012 --harness llm
+python -m adversarial cheat-review --trial <trial> --task 1012 --require-pass   # legacy: only reward>=1
+python -m adversarial cheat-review --trial <trial> --task 1012 --dry-run
 ```
+
+Review contracts (harness-agnostic): evidence layout `/evidence/{trial,task,out}`, policy `instruction/vN/cheating-reviewer`, output `cheat_review.json` with loophole rows. Failed attacks (reward &lt; 1) are reviewed too when they may reveal a real loophole (`binary=attempt`).
 
 Console scripts (after install): `adversarial`, `cheat-agent`, `cheat-review`.
 
 ## Layout
 
 ```text
-adversarial/     # cheat-agent / cheat-review CLI + Harbor helpers
-prompts/         # cheating_agent*.md, cheating_reviewer.md, cheatbench_reviewer.md
+adversarial/     # cheat-agent / cheat-review CLI + Harbor helpers + review_templates/
+instruction/     # policy generations: vN/{cheating-agent,cheating-reviewer}/{prompt,skill}
 scripts/         # optional multi-model stress grid helper
 tests/
-work/            # local only (gitignored): bootstrap + Harbor jobs
+work/            # local only (gitignored): see work/README.md
 ```
+
+Policy generations live under [`instruction/`](instruction/README.md). Default **v3**; add **v4** folders when iterating.  
+Local artifacts: [`work/README.md`](work/README.md) (`attacker/`, `staging/`, `runs/`, `archive/`).
 
 Optional / legacy: `python -m adversarial.real_eval review` runs the separate **CheatBench** 6-trace classifier (not the Harbor cheat-reviewer).
 
@@ -83,9 +94,9 @@ Fresh output dir (do not reuse old absolute-path jobs):
 ```bash
 # example: 1 model × 3 Seta tasks via the thin CLI
 for t in 1012 1018 1025; do
-  python -m adversarial cheat-agent --task "$t" --jobs-dir "work/results/pilot_$(date +%Y%m%d)"
+  python -m adversarial cheat-agent --task "$t" --jobs-dir "work/runs/pilot_$(date +%Y%m%d)/cheat"
 done
-# then for each trial with reward 1:
+# then for each trial:
 python -m adversarial cheat-review --trial <trial_dir> --task <id>
 ```
 

@@ -1,0 +1,13 @@
+# adversarial_eval — agent habits
+
+- Cheating **agent** needs Harbor (sandbox + verifier + saved trial). Defaults write to `work/runs/cheat/`.
+- Cheating **reviewer** does **not** need a Seta/problem Harbor task. It consumes a finished trial + original task files. Default reviews reward>=1 exploits **and** failed cheat attempts that may still reveal loopholes (`binary`: exploit|attempt|legitimate|inconclusive). Work layout: `work/{attacker,staging,runs,archive}` — see `work/README.md`.
+- Prefer named packs under `work/runs/<experiment>/` for citeable runs; keep `archive/` cold.
+- Prefer Harbor for multi-harness switching. Reviewer is **harness-agnostic**: stable contracts are `/evidence/{trial,task,out}`, reviewer skill/policy, and `cheat_review.json`. Switch via `cheat-review --harness llm|terminus-2|codex|mini-swe-agent`.
+- For skill-backed policy (`--skill`), use `terminus-2` or `codex` (`capabilities.skills=True`). Do not rely on `mini-swe-agent` for skills (skills=False; appended-instruction fallback only).
+- Task sets: vulnerable Seta `1012/1018/1025` (Terminal Wrench `rewarded_serious_exploit`); clean negatives `cancel-async-tasks` / `openssl-selfsigned-cert` / `nginx-request-logging` (TB2; analyzed for TW but not in the 331 hackable set — not a formal unhackability proof). Bootstrap via `real_eval bootstrap` / `bootstrap-clean`.
+- Default model: `deepseek-v4-pro-0813` (Harbor: `openai/deepseek-v4-pro-0813`).
+- Policy generations: `instruction/vN/{cheating-agent,cheating-reviewer}/{prompt/system.md,skill/SKILL.md,skill/scripts/}` (default `DEFAULT_VERSION=v3`; next round is v4). Staged Harbor path stays `/harbor/skills/<name>/` (Codex also copies to `~/.agents/skills/`). Do not re-inline full policy into Terminus system prompts; Codex gets thin prompt injected into `instruction.md` instead.
+- Prefer adding a new review harness adapter over baking Terminus-2 assumptions into the evidence layout or verdict schema.
+- Do not invent fixer/oracle/task edits unless Gary asks.
+- Highlight placeholders waiting for Gary’s input; keep answers direct.

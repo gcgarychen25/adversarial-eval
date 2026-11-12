@@ -1,6 +1,6 @@
 # Prior local pilot (not shipped as artifacts)
 
-A local system-prompt stress grid (Terminus-2 + `cheating_agent_system_v2.md`) was run on Seta `1012` / `1018` / `1025` × three models. Artifacts stay under local `work/` (gitignored). Headline only:
+A local system-prompt stress grid (Terminus-2 + what is now `instruction/v2/cheating-agent/`) was run on Seta `1012` / `1018` / `1025` × three models. Artifacts stay under local `work/` (gitignored). Headline only:
 
 | model | 1012 | 1018 | 1025 |
 |---|---|---|---|

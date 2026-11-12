@@ -77,7 +77,12 @@ def test_integrity_check_real_files(tmp_path):
         t=root/'source'/f'{id}.json'
         t.parent.mkdir(exist_ok=True)
         t.write_text('{}')
-        seta.append({'task_id':id,'task_path':str(task), 'published_exploit_trace':str(t)})
+        seta.append({
+            'task_id': id,
+            'task_path': str(task),
+            'published_exploit_trace': str(t),
+            'known_exploitable': True,
+        })
     (root/'attacker'/'cases.json').write_text(json.dumps(seta))
     assert validate(root)['status']=='ok'
     (base/'evidence'/(selected[0]['trace_id']+'.txt')).write_text('TAMPERED')

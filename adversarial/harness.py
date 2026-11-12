@@ -12,7 +12,9 @@ from pathlib import Path
 
 def run_task(task: Path, jobs: Path, *, agent: str, model: str | None,
              label: str, env_name: str = 'docker', dry_run: bool = False,
-             timeout: int = 3600, agent_kwargs: dict | None = None) -> dict:
+             timeout: int = 3600, agent_kwargs: dict | None = None,
+             skills: list[Path] | None = None,
+             policy_version: str | None = None) -> dict:
     task = task.resolve()
     if not (task / 'task.toml').is_file() or not (task / 'instruction.md').is_file():
         raise ValueError(f'Not a Harbor task directory: {task}')
@@ -23,10 +25,20 @@ def run_task(task: Path, jobs: Path, *, agent: str, model: str | None,
             '--jobs-dir', str(jobs.resolve()), '--job-name', name]
     if model:
         args.extend(['--model', model])
+    skill_paths: list[str] = []
+    for skill in skills or []:
+        skill = Path(skill).expanduser().resolve()
+        if not (skill / 'SKILL.md').is_file():
+            raise FileNotFoundError(f'Skill directory missing SKILL.md: {skill}')
+        # Harbor treats bare relative names as git shorthands; pass absolute paths.
+        skill_paths.append(str(skill))
+        args.extend(['--skill', str(skill)])
     for key, value in (agent_kwargs or {}).items():
         args.extend(['--agent-kwarg', f'{key}={json.dumps(value)}'])
     entry = {'task': task.name, 'agent': agent, 'model': model,
-             'job_name': name, 'command': args, 'status': 'dry_run' if dry_run else 'running'}
+             'job_name': name, 'command': args, 'skills': skill_paths,
+             'policy_version': policy_version,
+             'status': 'dry_run' if dry_run else 'running'}
     if dry_run:
         return entry
     if shutil.which('harbor') is None:
@@ -38,6 +50,9 @@ def run_task(task: Path, jobs: Path, *, agent: str, model: str | None,
     project_root = str(Path(__file__).resolve().parent.parent)
     prev_pp = env.get('PYTHONPATH', '')
     env['PYTHONPATH'] = project_root + (os.pathsep + prev_pp if prev_pp else '')
+    if policy_version:
+        from .system_prompt import POLICY_VERSION_ENV
+        env[POLICY_VERSION_ENV] = policy_version
     entry['pythonpath'] = env['PYTHONPATH']
     try:
         with log.open('w') as file:

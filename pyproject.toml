@@ -21,3 +21,12 @@ ot-adversarial = "adversarial.real_eval:main"
 
 [tool.setuptools.packages.find]
 include = ["adversarial*"]
+
+[tool.setuptools.package-data]
+adversarial = [
+  "review_templates/workspace/instruction.md",
+  "review_templates/workspace/task.toml",
+  "review_templates/workspace/environment/Dockerfile",
+  "review_templates/workspace/tests/test.sh",
+  "review_templates/workspace/tests/validate_review.py",
+]
