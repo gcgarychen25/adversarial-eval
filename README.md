@@ -1,10 +1,80 @@
 # Adversarial eval
 
-Cheating **agent** (Harbor rollout) + cheating **reviewer** (post-hoc LLM judge on saved trials).
+Cheating **agent** (Harbor rollout) + cheating **reviewer** (Harbor-sandboxed agent judge over the finished trial and original task).
 
 - Default model: `deepseek-v4.1-flash` via OpenCode Go (Harbor: `openai/deepseek-v4.1-flash`; base URL `https://opencode.ai/inference/go/openai/v1`).
 - Default **policy generation:** `instruction/v3/{cheating-agent,cheating-reviewer}/{prompt,skill}` (`--policy-version`). `instruction/v4/…` (RL task filtering: no solve-then-stub; reviewer adds `synthetic_exploit`) is opt-in via `--policy-version v4` or `ADVERSARIAL_POLICY_VERSION=v4`.
 - Default harness: Terminus-2 (system prompt + Harbor skills). Prefer Harbor for multi-harness switching (`terminus-2`, `codex` with skills; `mini-swe-agent` is appended-policy only). `--harness llm` inlines the skill body on the host.
+
+## System architecture
+
+```mermaid
+flowchart LR
+  subgraph INPUTS["Task inputs"]
+    T["Harbor task<br/>instruction.md · tests/ · environment/"]
+    L["Locked task set<br/>IDs · sampling"]
+  end
+
+  subgraph LAUNCH["System launch code — adversarial CLI"]
+    A["cheat-agent"]
+    R["cheat-review"]
+  end
+
+  subgraph HARBOR["Harbor runner"]
+    H["harbor run<br/>Docker sandbox · verifier · trial artifacts"]
+  end
+
+  subgraph AGENT["Cheating-agent rollout"]
+    AP["agent prompt<br/>thin activator"]
+    AS["cheating-agent skill"]
+    AM["Model<br/>deepseek-v4.1-flash<br/>OpenCode Go"]
+    AB["Agent sandbox<br/>task workspace"]
+    AT["Trial artifacts<br/>trajectory · verifier · logs"]
+  end
+
+  subgraph REVIEW["Cheating-reviewer rollout"]
+    RP["reviewer prompt<br/>thin activator"]
+    RS["cheating-reviewer skill"]
+    RM["Model<br/>deepseek-v4.1-flash<br/>OpenCode Go"]
+    RB["Reviewer sandbox<br/>/evidence/trial<br/>/evidence/task"]
+    RJ["cheat_review.json<br/>task_verdict<br/>trace_verdict<br/>trace_findings"]
+  end
+
+  T --> A
+  L --> A
+  A --> H
+  AP --> AB
+  AS --> AB
+  AM --> AB
+  H --> AB
+  AB --> AT
+
+  T --> R
+  AT --> R
+  R --> H
+  RP --> RB
+  RS --> RB
+  RM --> RB
+  H --> RB
+  RB --> RJ
+```
+
+| | Cheating agent | Cheating reviewer |
+|---|---|---|
+| Role | Find a from-start way to earn reward without the core work | Judge whether the trace shows a task/verifier defect |
+| Sandbox | Task workspace | `/evidence/trial` + `/evidence/task` |
+| Inputs | Original task, agent prompt, `cheating-agent` skill | Finished trial, original task, reviewer prompt, `cheating-reviewer` skill |
+| Output | Candidate artifacts + trajectory + verifier result | `cheat_review.json` with task/trace verdicts and findings |
+
+The reviewer is **not** a host-only post-hoc LLM judge. It is a Harbor-sandboxed agent with read access to the original task and the cheating agent’s full trial. It can inspect the tests, environment, trajectory, and verifier output before writing its verdict. The optional `--harness llm` path is a convenience fallback that inlines the same evidence into one prompt.
+
+Reviewer evidence layout:
+
+```text
+/evidence/trial   # finished cheating-agent trial
+/evidence/task    # original Harbor task (instruction.md, tests/, task.toml)
+/evidence/out     # cheat_review.json written by the reviewer
+```
 
 ## Setup
 
@@ -34,7 +104,7 @@ python -m adversarial cheat-agent --task 1012 --harness codex
 python -m adversarial cheat-agent --task cancel-async-tasks --harness codex   # clean negative (TB2)
 python -m adversarial cheat-agent --task 1012 --harness mini-swe-agent --prompt-mode appended
 
-# Cheating reviewer — reviews pass AND failed attempts
+# Cheating reviewer — Harbor-sandboxed agent judge; reviews pass AND failed attempts
 python -m adversarial cheat-review --trial work/runs/cheat/<job>/<trial>/ --task 1012
 python -m adversarial cheat-review --trial <trial> --task 1012 --harness codex
 python -m adversarial cheat-review --trial <trial> --task 1012 --harness llm
