@@ -101,6 +101,29 @@ python -m adversarial batch --tasks tasks.txt --workers 2 --policy-version v5 \
 
 `adversarial batch` prefetches task images, runs one task per worker, removes that task’s images/containers after review, and prunes Docker build cache at the end. Use `--no-prefetch`, `--no-cleanup`, `--keep-build-cache`, or `--quit-docker` to change the defaults.
 
+### Run the batch on a GCP VM
+
+The batch is CPU- and disk-heavy because every worker builds and runs Harbor task images. For a larger run, use a disposable Compute Engine VM instead of the laptop. It runs the same Ubuntu + Docker environment, so task images, verifiers, and cleanup semantics are unchanged.
+
+```bash
+# One-time: authenticate and select the billed project
+gcloud auth login
+gcloud config set project <your-project-id>
+
+# Create a VM (defaults: us-central1-a, c4d-highcpu-8, 100 GB, cs5416 network)
+python scripts/gcp_batch.py up
+
+# Start the same batch command in tmux on the VM
+python scripts/gcp_batch.py run --workers 2 \
+  --jobs-dir work/runs/v5-batch --output work/runs/v5-batch/SUMMARY.json
+
+python scripts/gcp_batch.py status      # tmux output + latest RESULTS.jsonl
+python scripts/gcp_batch.py fetch       # copy work/runs/v5-batch back
+python scripts/gcp_batch.py down        # delete VM, boot disk, and SSH firewall rule
+```
+
+The runner uses the Compute Engine REST API and plain SSH, so it does not depend on `gcloud compute` being fast. It creates a firewall rule for port 22 restricted to your current public IP, copies the repo plus the gitignored `.env` (mode 600), and deletes the VM’s boot disk on `down`. Change `--machine-type`, `--disk-size-gb`, `--zone`, `--network`, or `--subnet` if needed. The default `cs5416` network is the course VPC; use `--network default --subnet default` for a standalone project.
+
 Review contracts (harness-agnostic): evidence layout `/evidence/{trial,task,out}`, policy `instruction/vN/cheating-reviewer`, output `cheat_review.json`. Failed attacks (reward &lt; 1) are reviewed too when they may reveal a real loophole.
 
 Console scripts (after install): `adversarial`, `cheat-agent`, `cheat-review`.
