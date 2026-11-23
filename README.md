@@ -66,7 +66,16 @@ python -m adversarial.real_eval bootstrap --root work
 python -m adversarial.real_eval validate --root work
 ```
 
-Also needs: Harbor CLI + Docker (for agent rollouts). The CLI sets `PYTHONPATH` to this repo so Harbor can import `adversarial.stress_agent` from its own uv-tool Python.
+Local runs also need: Harbor CLI + Docker (for agent rollouts). The CLI sets `PYTHONPATH` to this repo so Harbor can import `adversarial.stress_agent` from its own uv-tool Python.
+
+### Local Docker vs GCP VM
+
+The batch has two execution targets, but one code path:
+
+- **Local Docker (default):** run `python -m adversarial batch ...` on this machine. Requires Docker and the Harbor CLI.
+- **GCP VM:** run `python scripts/gcp_batch.py up`, then `run`. The wrapper provisions an Ubuntu VM, installs Docker + Harbor there, syncs this repo and `.env`, and runs the same `adversarial batch` command remotely. Local Docker/Harbor are not required for this path; you need `gcloud`, `ssh`, and `rsync`.
+
+Both targets produce the same `RESULTS.jsonl`, `SUMMARY.json`, and `cheat_review.json` artifacts. The GCP wrapper is a host-level runner, not a different Harbor environment adapter: the VM still executes each task in Docker.
 
 The default endpoint is OpenCode Go: set `OPENAI_API_KEY` in `.env` (see `.env.example`). The default base URL is `https://opencode.ai/inference/go/openai/v1`; `--base-url` / `--key-env` remain available for other compatible endpoints. Keys are never written into trajectories or review JSON (only `key_present` + `base_url`).
 
@@ -123,6 +132,8 @@ python scripts/gcp_batch.py down        # delete VM, boot disk, and SSH firewall
 ```
 
 The runner uses the Compute Engine REST API and plain SSH, so it does not depend on `gcloud compute` being fast. It creates a firewall rule for port 22 restricted to your current public IP, copies the repo plus the gitignored `.env` (mode 600), and deletes the VM’s boot disk on `down`. Change `--machine-type`, `--disk-size-gb`, `--zone`, `--network`, or `--subnet` if needed. The default `cs5416` network is the course VPC; use `--network default --subnet default` for a standalone project.
+
+At list price, `c4d-highcpu-8` is about **$0.32/hour** in `us-central1`. The two-task validation used about **11 minutes end-to-end**, or roughly **$0.06 of VM time**; model tokens are billed separately. Use `--machine-type c4d-highcpu-4` (about $0.16/hour) for a cheaper, slower run.
 
 Review contracts (harness-agnostic): evidence layout `/evidence/{trial,task,out}`, policy `instruction/vN/cheating-reviewer`, output `cheat_review.json`. Failed attacks (reward &lt; 1) are reviewed too when they may reveal a real loophole.
 
