@@ -122,16 +122,21 @@ gcloud config set project <your-project-id>
 # Create a VM (defaults: us-central1-a, c4d-highcpu-8, 100 GB, cs5416 network)
 python scripts/gcp_batch.py up
 
-# Start the same batch command in tmux on the VM
+# Start the same batch command in tmux on the VM.
+# When the batch ends it uploads work/runs/v5-batch to GCS, then deletes the VM.
 python scripts/gcp_batch.py run --workers 2 \
   --jobs-dir work/runs/v5-batch --output work/runs/v5-batch/SUMMARY.json
 
-python scripts/gcp_batch.py status      # tmux output + latest RESULTS.jsonl
-python scripts/gcp_batch.py fetch       # copy work/runs/v5-batch back
-python scripts/gcp_batch.py down        # delete VM, boot disk, and SSH firewall rule
+python scripts/gcp_batch.py status      # if the VM is still running: tmux + RESULTS
+python scripts/gcp_batch.py fetch       # download the GCS tarball and extract it locally
+python scripts/gcp_batch.py down        # delete the SSH firewall rule; VM is already gone
 ```
 
-The runner uses the Compute Engine REST API and plain SSH, so it does not depend on `gcloud compute` being fast. It creates a firewall rule for port 22 restricted to your current public IP, copies the repo plus the gitignored `.env` (mode 600), and deletes the VM’s boot disk on `down`. Change `--machine-type`, `--disk-size-gb`, `--zone`, `--network`, or `--subnet` if needed. The default `cs5416` network is the course VPC; use `--network default --subnet default` for a standalone project.
+`run` is **auto-delete by default**. Before deleting the VM it tars the run directory and uploads it to `gs://adv-eval-results-<project>/runs/<vm>/<run>/results.tar.gz`. The bucket is created automatically on `up` with a 90-day object lifecycle. The VM uses a dedicated `adv-batch-runner` service account with object access to that bucket and instance-level admin only on itself, rather than the project Editor default account. `fetch` downloads the tarball and extracts it into `--jobs-dir`. This means you can close the laptop after `run` returns, and you do not need to keep the VM alive to retrieve results.
+
+Use `--no-auto-delete` when you want to inspect the VM or debug a failure interactively. In that case, run `fetch` and then `down` yourself. If the GCS upload fails after retries, the VM stops itself (compute billing stops, disk retained); `start` restarts it for recovery, and `down` removes it.
+
+The runner uses the Compute Engine REST API and plain SSH, so it does not depend on `gcloud compute` being fast. It creates a firewall rule for port 22 restricted to your current public IP, copies the repo plus the gitignored `.env` (mode 600), and deletes the VM’s boot disk when the VM is deleted. Change `--machine-type`, `--disk-size-gb`, `--zone`, `--network`, `--subnet`, or `--bucket` if needed. The default `cs5416` network is the course VPC; use `--network default --subnet default` for a standalone project.
 
 At list price, `c4d-highcpu-8` is about **$0.32/hour** in `us-central1`. The two-task validation used about **11 minutes end-to-end**, or roughly **$0.06 of VM time**; model tokens are billed separately. Use `--machine-type c4d-highcpu-4` (about $0.16/hour) for a cheaper, slower run.
 
