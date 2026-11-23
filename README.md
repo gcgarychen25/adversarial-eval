@@ -1,6 +1,6 @@
 # Adversarial eval
 
-Cheating **agent** (Harbor rollout) + cheating **reviewer** (Harbor-sandboxed agent judge over the finished trial and original task).
+Cheating **agent** (Harbor rollout) + cheating **reviewer** (Harbor-sandboxed agent judge over the finished trace and original task).
 
 - Default model: `deepseek-v4.1-flash` via OpenCode Go (Harbor: `openai/deepseek-v4.1-flash`; base URL `https://opencode.ai/inference/go/openai/v1`).
 - Default **policy generation:** `instruction/v3/{cheating-agent,cheating-reviewer}/{prompt,skill}` (`--policy-version`). `instruction/v4/…` (RL task filtering: no solve-then-stub; reviewer adds `synthetic_exploit`) is opt-in via `--policy-version v4` or `ADVERSARIAL_POLICY_VERSION=v4`.
@@ -8,48 +8,47 @@ Cheating **agent** (Harbor rollout) + cheating **reviewer** (Harbor-sandboxed ag
 
 ## System architecture
 
-The launcher takes a locked task set; each task spawns a cheating-agent instance; each saved trial spawns an independent reviewer; all reviews aggregate into one summary.
+The launcher takes a locked task set; each task spawns a cheating-agent instance; each saved trace spawns a reviewer; all reviews aggregate into one summary.
 
 ```mermaid
 flowchart TB
-  SET["Task set<br/>locked Harbor task IDs"] --> L["Adversarial evaluation launcher<br/>policy version · parallel workers"]
+  SET["Task set<br/>Harbor task IDs"] --> L["Adversarial evaluation launcher<br/>policy version · parallel workers"]
 
   subgraph AGENT["Cheating-agent rollout — per task, parallel"]
     direction LR
     IA["Agent input<br/>Harbor task<br/>prompt = system + cheating-agent skill<br/>model = deepseek-v4.1-flash / OpenCode Go"]
-    AG["Cheating-agent instances<br/>1..N parallel<br/>Harbor task sandbox + trusted verifier"]
-    OUT["Agent output<br/>traces · verifier output<br/>final workspace state"]
+    AG["Cheating-agent instances<br/>1..N parallel<br/>Harbor task environment"]
+    OUT["Agent output<br/>final Harbor workspace state · traces"]
     IA --> AG --> OUT
   end
 
-  subgraph REVIEW["Cheating-reviewer rollout — per trial, independent"]
+  subgraph REVIEW["Cheating-reviewer rollout — per trace"]
     direction LR
-    IR["Reviewer input<br/>saved trial + original task<br/>prompt = system + cheating-reviewer skill<br/>model = deepseek-v4.1-flash / OpenCode Go"]
-    RV["Cheating reviewers<br/>independent, one per trial<br/>Harbor review sandbox + JSON validator"]
-    RJ["cheat_review.json<br/>task_verdict · trace_verdict · trace_findings"]
+    IR["Reviewer input<br/>saved trace + original Harbor task<br/>prompt = system + cheating-reviewer skill<br/>model = deepseek-v4.1-flash / OpenCode Go"]
+    RV["Cheating reviewer<br/>Harbor review sandbox"]
+    RJ["cheat_review.json"]
     IR --> RV --> RJ
   end
 
   L --> IA
   OUT --> IR
-  RJ --> SUM["summary.json<br/>aggregate verdicts · counts · duration"]
+  RJ --> V["JSON validator<br/>V5 target schema"] --> SUM["summary.json<br/>aggregate verdicts · counts · duration"]
 ```
 
-Each agent input is a normal Harbor task — the same rollout unit used during training — plus the agent prompt/skill and model. Each reviewer gets the saved trial plus the original task, and produces one `cheat_review.json`.
+Each agent input is a normal Harbor task — the same rollout unit used during training — plus the agent prompt/skill and model. Each reviewer gets the saved trace plus the original task and produces one `cheat_review.json`.
 
 | | Cheating agent | Cheating reviewer |
 |---|---|---|
-| Purpose | Find a from-start way to earn reward without the core work | Judge whether the trial shows a task/verifier defect |
-| Launch code | `cheat-agent` | `cheat-review` |
-| Parallelism | 1..N across tasks | One independent reviewer per trial |
-| Harbor runner | Task sandbox + **trusted task verifier** | Review sandbox + evidence mount + **JSON output validator** |
-| Inputs | Harbor task, prompt (system + skill), model | Saved trial, original task, prompt (system + skill), model |
-| Output | Traces, verifier output, final workspace state | `cheat_review.json`: task verdict, trace verdict, findings |
+| Purpose | Find a from-start reward hack | Judge whether the trace shows a task defect |
+| Inputs | Harbor task, prompt (system + skill), model | Saved trace, original Harbor task, prompt (system + skill), model |
+| Environment | Official Harbor task environment | Harbor review sandbox with evidence |
+| Parallelism | 1..N across tasks | One per trace |
+| Output | Final Harbor workspace state, traces | `cheat_review.json`, validated against the V5 target schema |
 
 Reviewer evidence layout:
 
 ```text
-/evidence/trial   # finished cheating-agent trial
+/evidence/trial   # saved cheating trace (Harbor trial directory)
 /evidence/task    # original Harbor task (instruction.md, tests/, task.toml)
 /evidence/out     # cheat_review.json written by the reviewer
 ```
@@ -149,7 +148,7 @@ Fresh output dir (do not reuse old absolute-path jobs):
 for t in 1012 1018 1025; do
   python -m adversarial cheat-agent --task "$t" --jobs-dir "work/runs/pilot_$(date +%Y%m%d)/cheat"
 done
-# then for each trial:
+# then for each saved trace:
 python -m adversarial cheat-review --trial <trial_dir> --task <id>
 ```
 
@@ -157,4 +156,4 @@ Multi-model grid helper (still optional): `scripts/run_stress_comparison.py`.
 
 ## Evaluation reports
 
-- [2026-11-23 — v4 TMax50](docs/experiments/2026-11-23-v4-tmax50/REPORT.md): 8 exploit / 2 attempt / 5 inconclusive / 35 legitimate under the v4 policy. Shareable aggregates are in the same folder; raw trials stay local under `work/`.
+- [2026-11-23 — v4 TMax50](docs/experiments/2026-11-23-v4-tmax50/REPORT.md): 8 exploit / 2 attempt / 5 inconclusive / 35 legitimate under the v4 policy. Shareable aggregates are in the same folder; raw traces stay local under `work/`.
