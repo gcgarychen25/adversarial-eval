@@ -8,69 +8,43 @@ Cheating **agent** (Harbor rollout) + cheating **reviewer** (Harbor-sandboxed ag
 
 ## System architecture
 
-The pipeline is input/output driven. The cheating agent consumes a task and produces a saved trial; the reviewer consumes that trial plus the original task and produces a verdict.
+The launcher takes a locked task set; each task spawns a cheating-agent instance; each saved trial spawns an independent reviewer; all reviews aggregate into one summary.
 
 ```mermaid
 flowchart TB
-  subgraph A_IN["1 · Cheating-agent inputs"]
+  SET["Task set<br/>locked Harbor task IDs"] --> L["Adversarial evaluation launcher<br/>policy version · parallel workers"]
+
+  subgraph AGENT["Cheating-agent rollout — per task, parallel"]
     direction LR
-    T["Harbor task<br/>instruction.md · tests/ · environment/"]
-    L["Locked task set<br/>IDs · sampling"]
-    AP["Agent prompt<br/>thin activator"]
-    AS["cheating-agent skill"]
-    AM["Model<br/>deepseek-v4.1-flash<br/>OpenCode Go"]
+    IA["Agent input<br/>Harbor task<br/>prompt = system + cheating-agent skill<br/>model = deepseek-v4.1-flash / OpenCode Go"]
+    AG["Cheating-agent instances<br/>1..N parallel<br/>Harbor task sandbox + trusted verifier"]
+    OUT["Agent output<br/>traces · verifier output<br/>final workspace state"]
+    IA --> AG --> OUT
   end
 
-  subgraph A_RUN["2 · Harbor agent runner"]
+  subgraph REVIEW["Cheating-reviewer rollout — per trial, independent"]
     direction LR
-    A1["cheat-agent CLI<br/>launch code: stage task + skill"]
-    A2["harbor run<br/>task sandbox"]
-    A3["trusted task verifier<br/>reward · verifier logs"]
-    A1 --> A2 --> A3
+    IR["Reviewer input<br/>saved trial + original task<br/>prompt = system + cheating-reviewer skill<br/>model = deepseek-v4.1-flash / OpenCode Go"]
+    RV["Cheating reviewers<br/>independent, one per trial<br/>Harbor review sandbox + JSON validator"]
+    RJ["cheat_review.json<br/>task_verdict · trace_verdict · trace_findings"]
+    IR --> RV --> RJ
   end
 
-  subgraph A_OUT["3 · Agent output — saved trial"]
-    direction LR
-    AT["trial artifacts<br/>trajectory · verifier output<br/>logs · final workspace state"]
-  end
-
-  subgraph R_IN["4 · Cheating-reviewer inputs"]
-    direction LR
-    RT["Saved trial"]
-    OT["Original task<br/>instruction.md · tests/ · task.toml"]
-    RP["Reviewer prompt<br/>thin activator"]
-    RS["cheating-reviewer skill"]
-    RM["Model<br/>deepseek-v4.1-flash<br/>OpenCode Go"]
-  end
-
-  subgraph R_RUN["5 · Harbor reviewer runner"]
-    direction LR
-    R1["cheat-review CLI<br/>launch code: build review workspace"]
-    R2["harbor run<br/>review sandbox<br/>/evidence/trial + /evidence/task"]
-    R3["JSON output validator<br/>validate_review.py<br/>not the task verifier"]
-    R1 --> R2 --> R3
-  end
-
-  subgraph R_OUT["6 · Reviewer output"]
-    direction LR
-    RJ["cheat_review.json<br/>task_verdict<br/>trace_verdict<br/>trace_findings"]
-  end
-
-  A_IN --> A_RUN
-  A_RUN --> A_OUT
-  A_OUT --> R_IN
-  R_IN --> R_RUN
-  R_RUN --> R_OUT
+  L --> IA
+  OUT --> IR
+  RJ --> SUM["summary.json<br/>aggregate verdicts · counts · duration"]
 ```
+
+Each agent input is a normal Harbor task — the same rollout unit used during training — plus the agent prompt/skill and model. Each reviewer gets the saved trial plus the original task, and produces one `cheat_review.json`.
 
 | | Cheating agent | Cheating reviewer |
 |---|---|---|
 | Purpose | Find a from-start way to earn reward without the core work | Judge whether the trial shows a task/verifier defect |
 | Launch code | `cheat-agent` | `cheat-review` |
-| Harbor runner | Original task environment + **trusted task verifier** | Review workspace + evidence mount + **JSON output validator** |
-| Sandbox | Task workspace | `/evidence/trial` + `/evidence/task` |
-| Inputs | Task, prompt, `cheating-agent` skill, model | Saved trial, original task, prompt, `cheating-reviewer` skill, model |
-| Output | Saved trial: trajectory, verifier reward/logs, final workspace | `cheat_review.json`: task verdict, trace verdict, findings |
+| Parallelism | 1..N across tasks | One independent reviewer per trial |
+| Harbor runner | Task sandbox + **trusted task verifier** | Review sandbox + evidence mount + **JSON output validator** |
+| Inputs | Harbor task, prompt (system + skill), model | Saved trial, original task, prompt (system + skill), model |
+| Output | Traces, verifier output, final workspace state | `cheat_review.json`: task verdict, trace verdict, findings |
 
 Reviewer evidence layout:
 
