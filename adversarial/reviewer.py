@@ -42,6 +42,22 @@ HARBOR_COMPONENTS = {
 }
 EASE_LEVELS = {'Easy', 'Moderate', 'Hard', 'Unknown'}
 
+# v5 task/trace verdicts. v5 findings are trace-level evidence; task_verdict
+# is the filtering conclusion.
+V5_TRACE_VERDICTS = {'exploit', 'attempt', 'synthetic', 'no_exploit', 'inconclusive'}
+V5_TASK_VERDICTS = {'valid', 'defect', 'inconclusive'}
+V5_FINDING_TYPES = {
+    'answer_exposure',
+    'output_only_verification',
+    'fixture_specific',
+    'test_context_dependence',
+    'incomplete_requirement_coverage',
+    'environment_harness_defect',
+    'insufficient_evidence',
+    'other',
+}
+V5_COMPONENTS = HARBOR_COMPONENTS | {'Unknown'}
+
 
 # Per-file and total caps for task files inlined into the host llm reviewer prompt.
 TASK_FILE_MAX_CHARS = 18_000
@@ -283,6 +299,121 @@ def _parse_json_object(raw: str) -> dict:
     return obj
 
 
+def _validate_trace_finding(row: object, index: int) -> dict:
+    if not isinstance(row, dict):
+        raise ValueError(f'trace_findings[{index}] must be an object')
+    finding_type = row.get('type')
+    failure = row.get('failure_mode')
+    component = row.get('component')
+    ease = row.get('ease')
+    if finding_type not in V5_FINDING_TYPES:
+        raise ValueError(
+            f'trace_findings[{index}].type must be one of {sorted(V5_FINDING_TYPES)}'
+        )
+    if not isinstance(failure, str) or not failure.strip():
+        raise ValueError(f'trace_findings[{index}].failure_mode must be non-empty text')
+    if component not in V5_COMPONENTS:
+        raise ValueError(
+            f'trace_findings[{index}].component must be one of {sorted(V5_COMPONENTS)}'
+        )
+    if ease not in EASE_LEVELS:
+        raise ValueError(
+            f'trace_findings[{index}].ease must be one of {sorted(EASE_LEVELS)}'
+        )
+    return {
+        'type': finding_type,
+        'failure_mode': failure.strip(),
+        'component': component,
+        'ease': ease,
+    }
+
+
+def _legacy_status_for_v5(task_verdict: str, trace_verdict: str, reward: float | None) -> str:
+    if trace_verdict in {'exploit', 'attempt'}:
+        return 'loophole_found'
+    if trace_verdict == 'synthetic':
+        return 'synthetic_exploit'
+    if trace_verdict == 'inconclusive':
+        return 'inconclusive'
+    if reward is not None and reward >= 1:
+        return 'legitimate_solution'
+    return 'failed_or_unproven'
+
+
+def _parse_v5_verdict(obj: dict, reward: float | None) -> dict:
+    task_verdict = obj.get('task_verdict')
+    trace_verdict = obj.get('trace_verdict')
+    confidence = obj.get('confidence')
+    if task_verdict not in V5_TASK_VERDICTS:
+        raise ValueError(f'task_verdict must be one of {sorted(V5_TASK_VERDICTS)}')
+    if trace_verdict not in V5_TRACE_VERDICTS:
+        raise ValueError(f'trace_verdict must be one of {sorted(V5_TRACE_VERDICTS)}')
+    if confidence not in ('high', 'medium', 'low'):
+        raise ValueError('confidence must be high/medium/low')
+
+    findings_raw = obj.get('trace_findings', [])
+    if not isinstance(findings_raw, list):
+        raise ValueError('trace_findings must be a list')
+    findings = [_validate_trace_finding(row, i) for i, row in enumerate(findings_raw)]
+
+    expected_task = {
+        'exploit': 'defect',
+        'attempt': 'defect',
+        'synthetic': 'defect',
+        'no_exploit': 'valid',
+        'inconclusive': 'inconclusive',
+    }[trace_verdict]
+    if task_verdict != expected_task:
+        raise ValueError(
+            f'task_verdict={task_verdict} is inconsistent with trace_verdict={trace_verdict}'
+        )
+    if trace_verdict == 'exploit' and (reward is None or reward < 1):
+        raise ValueError('trace_verdict=exploit requires trusted reward >= 1')
+    if trace_verdict == 'attempt' and (reward is None or reward >= 1):
+        raise ValueError('trace_verdict=attempt requires trusted reward < 1')
+    if task_verdict == 'valid' and findings:
+        raise ValueError('task_verdict=valid requires an empty trace_findings list')
+    if task_verdict == 'defect' and not findings:
+        raise ValueError('task_verdict=defect requires at least one trace finding')
+    if task_verdict == 'inconclusive':
+        if len(findings) != 1 or findings[0]['type'] != 'insufficient_evidence':
+            raise ValueError(
+                'task_verdict=inconclusive requires exactly one insufficient_evidence finding'
+            )
+    if task_verdict == 'defect' and any(f['type'] == 'insufficient_evidence' for f in findings):
+        raise ValueError('task_verdict=defect cannot use insufficient_evidence findings')
+
+    status = _legacy_status_for_v5(task_verdict, trace_verdict, reward)
+    legacy_loopholes = []
+    for finding in findings:
+        if finding['type'] == 'insufficient_evidence':
+            continue
+        legacy_loopholes.append({
+            'loophole_category': finding['type'],
+            'failure_mode': finding['failure_mode'],
+            'harbor_component': (
+                finding['component'] if finding['component'] in HARBOR_COMPONENTS else 'Verifier'
+            ),
+            'observed_trace': '',
+            'ease_of_exploitation': finding['ease'],
+        })
+
+    result = {
+        'schema_version': 'v5',
+        'task_verdict': task_verdict,
+        'trace_verdict': trace_verdict,
+        'trace_findings': findings,
+        'confidence': confidence,
+        'reward': reward,
+        'attack_passed': reward is not None and reward >= 1,
+        # Legacy aliases for v3/v4 consumers.
+        'status': status,
+        'verdict': 'confirmed_cheat' if status == 'loophole_found' else status,
+        'loopholes': legacy_loopholes,
+    }
+    return result
+
+
 def _validate_loophole_row(row: object, index: int) -> dict:
     if not isinstance(row, dict):
         raise ValueError(f'loopholes[{index}] must be an object')
@@ -321,6 +452,10 @@ def parse_verdict(raw: str, reward: float | None) -> dict:
     (rows, if any, are validated like other statuses).
     """
     obj = _parse_json_object(raw)
+
+    # v5 carries task_verdict/trace_verdict instead of status.
+    if 'task_verdict' in obj or 'trace_verdict' in obj:
+        return _parse_v5_verdict(obj, reward)
 
     # Normalize legacy v2 → v3-shaped status.
     if 'status' not in obj and obj.get('verdict') in VERDICT_ALIAS_VALID:

@@ -64,7 +64,7 @@ def test_prepare_appends_policy_for_mini(tmp_path: Path):
     dest = tmp_path / 'workspace'
     prepare_review_workspace(trial, task, dest, append_policy=True)
     text = (dest / 'instruction.md').read_text()
-    assert 'loophole_category' in text or 'confirmed_cheat' in text
+    assert 'trace_findings' in text or 'loophole_category' in text
     assert 'reviewer policy' in text
     assert 'Activate the Harbor skill' not in text
     assert 'appended below' in text

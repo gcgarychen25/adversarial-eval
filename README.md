@@ -3,7 +3,7 @@
 Cheating **agent** (Harbor rollout) + cheating **reviewer** (Harbor-sandboxed agent judge over the finished trace and original task).
 
 - Default model: `deepseek-v4.1-flash` via OpenCode Go (Harbor: `openai/deepseek-v4.1-flash`; base URL `https://opencode.ai/inference/go/openai/v1`).
-- Default **policy generation:** `instruction/v3/{cheating-agent,cheating-reviewer}/{prompt,skill}` (`--policy-version`). `instruction/v4/…` (RL task filtering: no solve-then-stub; reviewer adds `synthetic_exploit`) is opt-in via `--policy-version v4` or `ADVERSARIAL_POLICY_VERSION=v4`.
+- Default **policy generation:** `instruction/v5/{cheating-agent,cheating-reviewer}/{prompt,skill}` (`--policy-version`). `v4` and `v3` remain selectable via `--policy-version` or `ADVERSARIAL_POLICY_VERSION`.
 - Default harness: Terminus-2 (system prompt + Harbor skills). Prefer Harbor for multi-harness switching (`terminus-2`, `codex` with skills; `mini-swe-agent` is appended-policy only). `--harness llm` inlines the skill body on the host.
 
 ## System architecture
@@ -32,7 +32,7 @@ flowchart TB
 
   L --> IA
   OUT --> IR
-  RJ --> V["JSON validator<br/>V5 target schema"] --> SUM["summary.json<br/>aggregate verdicts · counts · duration"]
+  RJ --> V["JSON validator<br/>v5 schema"] --> SUM["summary.json<br/>aggregate verdicts · counts · duration"]
 ```
 
 Each agent input is a normal Harbor task — the same rollout unit used during training — plus the agent prompt/skill and model. Each reviewer gets the saved trace plus the original task and produces one `cheat_review.json`.
@@ -43,7 +43,7 @@ Each agent input is a normal Harbor task — the same rollout unit used during t
 | Inputs | Harbor task, prompt (system + skill), model | Saved trace, original Harbor task, prompt (system + skill), model |
 | Environment | Official Harbor task environment | Harbor review sandbox with evidence |
 | Parallelism | 1..N across tasks | One per trace |
-| Output | Final Harbor workspace state, traces | `cheat_review.json`, validated against the V5 target schema |
+| Output | Final Harbor workspace state, traces | `cheat_review.json`, validated against the v5 schema |
 
 Reviewer evidence layout:
 
@@ -87,13 +87,18 @@ python -m adversarial cheat-review --trial <trial> --task 1012 --harness codex
 python -m adversarial cheat-review --trial <trial> --task 1012 --harness llm
 python -m adversarial cheat-review --trial <trial> --task 1012 --require-pass   # legacy: only reward>=1
 python -m adversarial cheat-review --trial <trial> --task 1012 --dry-run
+
+# Aggregate v5 per-trial reviews into SUMMARY.json
+python -m adversarial summarize --trial <trial> \
+  --started-at <iso8601> --finished-at <iso8601> \
+  --output SUMMARY.json
 ```
 
 Review contracts (harness-agnostic): evidence layout `/evidence/{trial,task,out}`, policy `instruction/vN/cheating-reviewer`, output `cheat_review.json`. Failed attacks (reward &lt; 1) are reviewed too when they may reveal a real loophole.
 
 Console scripts (after install): `adversarial`, `cheat-agent`, `cheat-review`.
 
-## Reviewer output (V5 target schema)
+## Reviewer output (v5)
 
 ```json
 {
@@ -123,25 +128,36 @@ tests/
 work/            # local only (gitignored): see work/README.md
 ```
 
-Policy generations live under [`instruction/`](instruction/README.md). Default **v3**; **v4** is available opt-in (see `instruction/README.md`).
+Policy generations live under [`instruction/`](instruction/README.md). Default **v5**; v4 and v3 remain selectable.
 Local artifacts: [`work/README.md`](work/README.md) (`attacker/`, `staging/`, `runs/`, `archive/`).
 
 Optional / legacy: `python -m adversarial.real_eval review` runs the separate **CheatBench** 6-trace classifier (not the Harbor cheat-reviewer).
 
 ## Reproduce a small pilot
 
-Fresh output dir (do not reuse old absolute-path jobs):
+One v5 agent rollout, one sandboxed reviewer, one summary:
 
 ```bash
-# example: 1 model × 3 Seta tasks via the thin CLI
-for t in 1012 1018 1025; do
-  python -m adversarial cheat-agent --task "$t" --jobs-dir "work/runs/pilot_$(date +%Y%m%d)/cheat"
-done
-# then for each saved trace:
-python -m adversarial cheat-review --trial <trial_dir> --task <id>
+START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+python -m adversarial cheat-agent --task 1012 \
+  --harness codex --policy-version v5 \
+  --jobs-dir work/runs/pilot_v5/cheat --job-name pilot-v5-1012
+
+TRIAL=$(python3 -c "import json; print(json.load(open('work/runs/pilot_v5/cheat/last_cheat_agent.json'))['trial_dir'])")
+
+python -m adversarial cheat-review --trial "$TRIAL" --task 1012 \
+  --harness codex --policy-version v5
+
+FINISH=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+python -m adversarial summarize --trial "$TRIAL" \
+  --started-at "$START" --finished-at "$FINISH" \
+  --policy-version v5 --model deepseek-v4.1-flash \
+  --output work/runs/pilot_v5/SUMMARY.json
 ```
 
-Multi-model grid helper (still optional): `scripts/run_stress_comparison.py`.
+For a host-only review without a review sandbox, replace `--harness codex` with `--harness llm`. `1012` requires the one-time bootstrap from Setup. Multi-model grid helper: `scripts/run_stress_comparison.py`.
 
 ## Evaluation reports
 

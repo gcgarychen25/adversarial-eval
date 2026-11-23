@@ -28,6 +28,66 @@ HARBOR_COMPONENTS = {
 }
 EASE_LEVELS = {'Easy', 'Moderate', 'Hard', 'Unknown'}
 
+V5_TASK_VERDICTS = {'valid', 'defect', 'inconclusive'}
+V5_TRACE_VERDICTS = {'exploit', 'attempt', 'synthetic', 'no_exploit', 'inconclusive'}
+V5_FINDING_TYPES = {
+    'answer_exposure',
+    'output_only_verification',
+    'fixture_specific',
+    'test_context_dependence',
+    'incomplete_requirement_coverage',
+    'environment_harness_defect',
+    'insufficient_evidence',
+    'other',
+}
+V5_COMPONENTS = HARBOR_COMPONENTS | {'Unknown'}
+
+
+def _v5_finding_ok(row: object) -> bool:
+    if not isinstance(row, dict):
+        return False
+    if row.get('type') not in V5_FINDING_TYPES:
+        return False
+    if not isinstance(row.get('failure_mode'), str) or not row['failure_mode'].strip():
+        return False
+    if row.get('component') not in V5_COMPONENTS:
+        return False
+    if row.get('ease') not in EASE_LEVELS:
+        return False
+    return True
+
+
+def _v5_ok(obj: dict) -> bool:
+    task_verdict = obj.get('task_verdict')
+    trace_verdict = obj.get('trace_verdict')
+    if task_verdict not in V5_TASK_VERDICTS or trace_verdict not in V5_TRACE_VERDICTS:
+        return False
+    if obj.get('confidence') not in ('high', 'medium', 'low'):
+        return False
+    findings = obj.get('trace_findings')
+    if not isinstance(findings, list) or not all(_v5_finding_ok(row) for row in findings):
+        return False
+    expected_task = {
+        'exploit': 'defect',
+        'attempt': 'defect',
+        'synthetic': 'defect',
+        'no_exploit': 'valid',
+        'inconclusive': 'inconclusive',
+    }[trace_verdict]
+    if task_verdict != expected_task:
+        return False
+    if task_verdict == 'valid' and findings:
+        return False
+    if task_verdict == 'defect':
+        if not findings:
+            return False
+        if any(row.get('type') == 'insufficient_evidence' for row in findings):
+            return False
+    if task_verdict == 'inconclusive':
+        if len(findings) != 1 or findings[0].get('type') != 'insufficient_evidence':
+            return False
+    return True
+
 
 def _loophole_ok(row: object) -> bool:
     if not isinstance(row, dict):
@@ -54,6 +114,10 @@ def ok(path: Path) -> bool:
         return False
     if not isinstance(obj, dict):
         return False
+
+    if 'task_verdict' in obj or 'trace_verdict' in obj:
+        return _v5_ok(obj)
+
     if not isinstance(obj.get('rationale'), str) or not obj['rationale'].strip():
         return False
     if obj.get('confidence') not in ('high', 'medium', 'low'):

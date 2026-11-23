@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .env import apply_openai_compat, redact_config
 from .harness import read_reward, run_task
+from .reporting import build_summary, write_summary
 from .review_harness import REVIEW_HARNESSES, run_harbor_review
 from .reviewer import binary_label, llm_review
 from .system_prompt import (
@@ -365,6 +366,24 @@ def cmd_cheat_review(args: argparse.Namespace) -> int:
     return 0 if run.get('status') in ('ok',) else 1
 
 
+def cmd_summarize(args: argparse.Namespace) -> int:
+    trials = [Path(item).expanduser().resolve() for item in args.trial]
+    for trial in trials:
+        if not (trial / 'cheat_review.json').is_file():
+            raise FileNotFoundError(f'Missing reviewer output: {trial / "cheat_review.json"}')
+    summary = build_summary(
+        trials,
+        started_at=args.started_at,
+        finished_at=args.finished_at,
+        policy_version=args.policy_version,
+        model=args.model,
+    )
+    write_summary(args.output, summary)
+    print(json.dumps(summary, indent=2))
+    print(f'\nSaved summary: {args.output}', file=sys.stderr)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         prog='adversarial',
@@ -450,6 +469,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument('--key-env', default='OPENAI_API_KEY')
     p.add_argument('--output', type=Path, help='default: <trial>/cheat_review.json')
     p.set_defaults(func=cmd_cheat_review)
+
+    p = sub.add_parser(
+        'summarize',
+        help='Aggregate v5 per-trial cheat_review.json files into SUMMARY.json',
+    )
+    p.add_argument('--trial', action='append', required=True, type=Path,
+                   help='trial directory containing a v5 cheat_review.json; repeatable')
+    p.add_argument('--started-at', required=True, help='experiment start time (ISO 8601)')
+    p.add_argument('--finished-at', required=True, help='experiment finish time (ISO 8601)')
+    p.add_argument('--policy-version', default=active_version())
+    p.add_argument('--model', default=DEFAULT_MODEL)
+    p.add_argument('--output', type=Path, default=Path('SUMMARY.json'))
+    p.set_defaults(func=cmd_summarize)
 
     return ap
 

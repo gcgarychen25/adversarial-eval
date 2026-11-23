@@ -13,7 +13,7 @@ Layout::
           skill/SKILL.md
           skill/scripts/
 
-Bump ``DEFAULT_VERSION`` when adding the next generation (v4, …).
+Bump ``DEFAULT_VERSION`` when adding the next generation (v5, …).
 """
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ CHEATING_REVIEWER_NAME = 'cheating-reviewer'
 ROLE_NAMES = (CHEATING_AGENT_NAME, CHEATING_REVIEWER_NAME)
 
 # Bump when the next generation is ready to be the default.
-DEFAULT_VERSION = 'v3'
+DEFAULT_VERSION = 'v5'
 POLICY_VERSION_ENV = 'ADVERSARIAL_POLICY_VERSION'
 
 _VERSION_RE = re.compile(r'^v(\d+)$')

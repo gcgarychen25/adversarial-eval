@@ -60,9 +60,10 @@ def _make_trial(tmp: Path, reward: str = '1') -> Path:
 
 # 1. Generation discovery + staging -------------------------------------------------
 
-def test_v4_discovered_and_default_unchanged():
+def test_v4_discovered_and_v5_default():
     assert 'v4' in list_policy_versions()
-    assert DEFAULT_VERSION == 'v3'
+    assert 'v5' in list_policy_versions()
+    assert DEFAULT_VERSION == 'v5'
 
 
 @pytest.mark.parametrize('role', ['agent', 'reviewer'])
