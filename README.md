@@ -92,7 +92,14 @@ python -m adversarial cheat-review --trial <trial> --task 1012 --dry-run
 python -m adversarial summarize --trial <trial> \
   --started-at <iso8601> --finished-at <iso8601> \
   --output SUMMARY.json
+
+# Parallel batch: one task per worker, prefetch → agent → reviewer → cleanup → summary
+python -m adversarial batch --tasks tasks.txt --workers 2 --policy-version v5 \
+  --agent-harness codex --review-harness codex \
+  --jobs-dir work/runs/v5-batch --output work/runs/v5-batch/SUMMARY.json
 ```
+
+`adversarial batch` prefetches task images, runs one task per worker, removes that task’s images/containers after review, and prunes Docker build cache at the end. Use `--no-prefetch`, `--no-cleanup`, `--keep-build-cache`, or `--quit-docker` to change the defaults.
 
 Review contracts (harness-agnostic): evidence layout `/evidence/{trial,task,out}`, policy `instruction/vN/cheating-reviewer`, output `cheat_review.json`. Failed attacks (reward &lt; 1) are reviewed too when they may reveal a real loophole.
 
@@ -157,7 +164,19 @@ python -m adversarial summarize --trial "$TRIAL" \
   --output work/runs/pilot_v5/SUMMARY.json
 ```
 
-For a host-only review without a review sandbox, replace `--harness codex` with `--harness llm`. `1012` requires the one-time bootstrap from Setup. Multi-model grid helper: `scripts/run_stress_comparison.py`.
+For a host-only review without a review sandbox, replace `--harness codex` with `--harness llm`. `1012` requires the one-time bootstrap from Setup.
+
+For multiple tasks in parallel, put one task ID or Harbor task path per line in `tasks.txt` and run:
+
+```bash
+python -m adversarial batch --tasks tasks.txt --workers 2 --policy-version v5 \
+  --agent-harness codex --review-harness codex \
+  --jobs-dir work/runs/v5-batch --output work/runs/v5-batch/SUMMARY.json
+```
+
+Each worker prefetches its task image, runs the agent, runs an independent reviewer, and removes the task image after the trial. The batch then writes a v5 `SUMMARY.json`; `RESULTS.jsonl` is resumable with `--no-resume` to force a rerun.
+
+Multi-model grid helper: `scripts/run_stress_comparison.py`.
 
 ## Evaluation reports
 

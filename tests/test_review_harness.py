@@ -258,7 +258,6 @@ def test_skill_body_matches_policy():
         CHEATING_REVIEWER_NAME,
         skill_body,
         skill_version_dir,
-        stage_skill_for_harbor,
         SYSTEM_PROMPT,
         REVIEWER_SYSTEM_PROMPT,
     )

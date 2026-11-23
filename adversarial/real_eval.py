@@ -6,7 +6,6 @@ CheatBench review and Terminal Wrench attack are intentionally independent.
 from __future__ import annotations
 
 import argparse
-import csv
 import hashlib
 import json
 import os
@@ -19,7 +18,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from .harness import run_task, read_reward
+from .harness import run_task
 
 CHEATBENCH_REPO = 'steinad/CheatBench'
 CHEATBENCH_FILE = 'data/processed/parquet/micro.parquet'

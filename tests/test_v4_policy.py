@@ -12,7 +12,6 @@ import pytest
 from adversarial import cli, reviewer
 from adversarial.cli import build_parser
 from adversarial.reviewer import binary_label, build_evidence, llm_review, parse_verdict
-from adversarial.review_harness import prepare_review_workspace
 from adversarial.system_prompt import (
     CHEATING_AGENT_NAME,
     CHEATING_REVIEWER_NAME,

@@ -32,7 +32,6 @@ LEGACY_VERDICT_VALID = {
 # v4 normally emits ``status``, but accept ``verdict: synthetic_exploit`` as
 # an alias (the same alias ``binary_label`` already understands).
 VERDICT_ALIAS_VALID = LEGACY_VERDICT_VALID | {'synthetic_exploit'}
-VALID = STATUS_VALID | VERDICT_ALIAS_VALID
 
 HARBOR_COMPONENTS = {
     'Docker environment',

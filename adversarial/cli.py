@@ -10,6 +10,7 @@ import shutil
 import sys
 from pathlib import Path
 
+from .constants import DEFAULT_MODEL
 from .env import apply_openai_compat, redact_config
 from .harness import read_reward, run_task
 from .reporting import build_summary, write_summary
@@ -26,10 +27,8 @@ from .system_prompt import (
     stage_skill_for_harbor,
 )
 
-DEFAULT_MODEL = 'deepseek-v4.1-flash'
 # Harbor/LiteLLM needs a provider prefix. ``openai/`` means "OpenAI-compatible
 # HTTP API" (Alibaba compatible-mode, real OpenAI, etc.) — not "OpenAI the model".
-DEFAULT_AGENT_MODEL = DEFAULT_MODEL
 HARNESSES = ('terminus-2', 'mini-swe-agent', 'codex')
 # Harnesses that accept Harbor ``--skill`` (capabilities.skills=True).
 SKILL_HARNESSES = frozenset({'terminus-2', 'codex'})
@@ -366,6 +365,11 @@ def cmd_cheat_review(args: argparse.Namespace) -> int:
     return 0 if run.get('status') in ('ok',) else 1
 
 
+def cmd_batch(args: argparse.Namespace) -> int:
+    from .batch import run_batch
+    return run_batch(args)
+
+
 def cmd_summarize(args: argparse.Namespace) -> int:
     trials = [Path(item).expanduser().resolve() for item in args.trial]
     for trial in trials:
@@ -482,6 +486,31 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument('--model', default=DEFAULT_MODEL)
     p.add_argument('--output', type=Path, default=Path('SUMMARY.json'))
     p.set_defaults(func=cmd_summarize)
+
+    p = sub.add_parser(
+        'batch',
+        help='Run one Harbor task per worker: prefetch, agent, reviewer, cleanup, summary',
+    )
+    p.add_argument('--tasks', required=True, type=Path,
+                   help='text file with one task ID or Harbor task path per line')
+    p.add_argument('--workers', type=int, default=1)
+    p.add_argument('--policy-version', choices=list_policy_versions(), default=active_version())
+    p.add_argument('--agent-harness', choices=HARNESSES, default='codex')
+    p.add_argument('--review-harness', choices=REVIEW_HARNESSES, default='codex')
+    p.add_argument('--model', default=DEFAULT_MODEL)
+    p.add_argument('--root', type=Path, default=Path('work'))
+    p.add_argument('--jobs-dir', type=Path, default=Path('work/runs/batch'))
+    p.add_argument('--output', type=Path, default=Path('SUMMARY.json'))
+    p.add_argument('--timeout', type=int, default=3600)
+    p.add_argument('--prefetch-timeout', type=int, default=900)
+    p.add_argument('--resume', dest='resume', action='store_true', default=True,
+                   help='skip task IDs already marked ok in RESULTS.jsonl (default)')
+    p.add_argument('--no-resume', dest='resume', action='store_false')
+    p.add_argument('--no-prefetch', action='store_true', help='skip image prefetch')
+    p.add_argument('--no-cleanup', action='store_true', help='keep task images and staging dirs')
+    p.add_argument('--keep-build-cache', action='store_true')
+    p.add_argument('--quit-docker', action='store_true', help='quit Docker Desktop after the batch')
+    p.set_defaults(func=cmd_batch)
 
     return ap
 

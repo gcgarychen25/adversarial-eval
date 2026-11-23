@@ -1,0 +1,3 @@
+# v5 batch validation: one known defect, one known legitimate solve
+task_007374_b34201c8
+task_003904_132e149d

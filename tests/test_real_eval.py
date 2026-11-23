@@ -3,12 +3,10 @@
 Rows in unit tests are synthetic *test doubles*, never shipped as evaluation cases.
 """
 import json
-import os
-from pathlib import Path
 
 import pytest
 
-from adversarial.real_eval import (LABELS, parse_monitor_reply, select_cheatbench_rows,
+from adversarial.real_eval import (parse_monitor_reply, select_cheatbench_rows,
                                    digest, validate, SETA)
 
 
