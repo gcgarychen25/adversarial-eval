@@ -95,8 +95,6 @@ Console scripts (after install): `adversarial`, `cheat-agent`, `cheat-review`.
 
 ## Reviewer output (V5 target schema)
 
-V5 is the target schema; V3 remains the default and V4 is opt-in until V5 is implemented and calibrated. The reviewer answers one **task-level** question and one **trace-level** question:
-
 ```json
 {
   "task_verdict": "valid | defect | inconclusive",
