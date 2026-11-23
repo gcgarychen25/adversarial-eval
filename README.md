@@ -21,32 +21,7 @@ python -m adversarial.real_eval validate --root work
 
 Also needs: Harbor CLI + Docker (for agent rollouts). The CLI sets `PYTHONPATH` to this repo so Harbor can import `adversarial.stress_agent` from its own uv-tool Python.
 
-### API endpoint (OpenAI-compatible)
-
-Alibaba Model Studio (`.../compatible-mode/v1`) and real OpenAI use the **same** Chat Completions protocol. Set:
-
-| Var | Role |
-|---|---|
-| `OPENAI_API_KEY` | Bearer token |
-| `OPENAI_BASE_URL` | Base URL ending in `/v1` (or Alibaba `/compatible-mode/v1`) |
-
-The CLI also accepts `--base-url` / `--key-env`, loads a local `.env` if present, and mirrors `OPENAI_API_BASE` for Harbor/LiteLLM. Keys are never written into trajectories or review JSON (only `key_present` + `base_url`).
-
-**Alibaba example**
-
-```bash
-export OPENAI_API_KEY='...'
-export OPENAI_BASE_URL='https://<workspace>.maas.aliyuncs.com/compatible-mode/v1'
-python -m adversarial cheat-agent --task 1012 --model deepseek-v4.1-flash --harness codex
-```
-
-**Real OpenAI / later Luma (OpenAI base URL)**
-
-```bash
-export OPENAI_API_KEY='...'
-export OPENAI_BASE_URL='https://api.openai.com/v1'
-python -m adversarial cheat-agent --task 1012 --model <model-id>
-```
+The default endpoint is OpenCode Go: set `OPENAI_API_KEY` in `.env` (see `.env.example`). The default base URL is `https://opencode.ai/inference/go/openai/v1`; `--base-url` / `--key-env` remain available for other compatible endpoints. Keys are never written into trajectories or review JSON (only `key_present` + `base_url`).
 
 ## Commands
 
