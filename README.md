@@ -8,65 +8,71 @@ Cheating **agent** (Harbor rollout) + cheating **reviewer** (Harbor-sandboxed ag
 
 ## System architecture
 
+The pipeline is input/output driven. The cheating agent consumes a task and produces a saved trial; the reviewer consumes that trial plus the original task and produces a verdict.
+
 ```mermaid
-flowchart LR
-  subgraph INPUTS["Task inputs"]
+flowchart TB
+  subgraph A_IN["1 · Cheating-agent inputs"]
+    direction LR
     T["Harbor task<br/>instruction.md · tests/ · environment/"]
     L["Locked task set<br/>IDs · sampling"]
-  end
-
-  subgraph LAUNCH["System launch code — adversarial CLI"]
-    A["cheat-agent"]
-    R["cheat-review"]
-  end
-
-  subgraph HARBOR["Harbor runner"]
-    H["harbor run<br/>Docker sandbox · verifier · trial artifacts"]
-  end
-
-  subgraph AGENT["Cheating-agent rollout"]
-    AP["agent prompt<br/>thin activator"]
+    AP["Agent prompt<br/>thin activator"]
     AS["cheating-agent skill"]
     AM["Model<br/>deepseek-v4.1-flash<br/>OpenCode Go"]
-    AB["Agent sandbox<br/>task workspace"]
-    AT["Trial artifacts<br/>trajectory · verifier · logs"]
   end
 
-  subgraph REVIEW["Cheating-reviewer rollout"]
-    RP["reviewer prompt<br/>thin activator"]
+  subgraph A_RUN["2 · Harbor agent runner"]
+    direction LR
+    A1["cheat-agent CLI<br/>launch code: stage task + skill"]
+    A2["harbor run<br/>task sandbox"]
+    A3["trusted task verifier<br/>reward · verifier logs"]
+    A1 --> A2 --> A3
+  end
+
+  subgraph A_OUT["3 · Agent output — saved trial"]
+    direction LR
+    AT["trial artifacts<br/>trajectory · verifier output<br/>logs · final workspace state"]
+  end
+
+  subgraph R_IN["4 · Cheating-reviewer inputs"]
+    direction LR
+    RT["Saved trial"]
+    OT["Original task<br/>instruction.md · tests/ · task.toml"]
+    RP["Reviewer prompt<br/>thin activator"]
     RS["cheating-reviewer skill"]
     RM["Model<br/>deepseek-v4.1-flash<br/>OpenCode Go"]
-    RB["Reviewer sandbox<br/>/evidence/trial<br/>/evidence/task"]
+  end
+
+  subgraph R_RUN["5 · Harbor reviewer runner"]
+    direction LR
+    R1["cheat-review CLI<br/>launch code: build review workspace"]
+    R2["harbor run<br/>review sandbox<br/>/evidence/trial + /evidence/task"]
+    R3["JSON output validator<br/>validate_review.py<br/>not the task verifier"]
+    R1 --> R2 --> R3
+  end
+
+  subgraph R_OUT["6 · Reviewer output"]
+    direction LR
     RJ["cheat_review.json<br/>task_verdict<br/>trace_verdict<br/>trace_findings"]
   end
 
-  T --> A
-  L --> A
-  A --> H
-  AP --> AB
-  AS --> AB
-  AM --> AB
-  H --> AB
-  AB --> AT
-
-  T --> R
-  AT --> R
-  R --> H
-  RP --> RB
-  RS --> RB
-  RM --> RB
-  H --> RB
-  RB --> RJ
+  A_IN --> A_RUN
+  A_RUN --> A_OUT
+  A_OUT --> R_IN
+  R_IN --> R_RUN
+  R_RUN --> R_OUT
 ```
 
 | | Cheating agent | Cheating reviewer |
 |---|---|---|
-| Role | Find a from-start way to earn reward without the core work | Judge whether the trace shows a task/verifier defect |
+| Purpose | Find a from-start way to earn reward without the core work | Judge whether the trial shows a task/verifier defect |
+| Launch code | `cheat-agent` | `cheat-review` |
+| Harbor runner | Original task environment + **trusted task verifier** | Review workspace + evidence mount + **JSON output validator** |
 | Sandbox | Task workspace | `/evidence/trial` + `/evidence/task` |
-| Inputs | Original task, agent prompt, `cheating-agent` skill | Finished trial, original task, reviewer prompt, `cheating-reviewer` skill |
-| Output | Candidate artifacts + trajectory + verifier result | `cheat_review.json` with task/trace verdicts and findings |
+| Inputs | Task, prompt, `cheating-agent` skill, model | Saved trial, original task, prompt, `cheating-reviewer` skill, model |
+| Output | Saved trial: trajectory, verifier reward/logs, final workspace | `cheat_review.json`: task verdict, trace verdict, findings |
 
-The reviewer is **not** a host-only post-hoc LLM judge. It is a Harbor-sandboxed agent with read access to the original task and the cheating agent’s full trial. It can inspect the tests, environment, trajectory, and verifier output before writing its verdict. The optional `--harness llm` path is a convenience fallback that inlines the same evidence into one prompt.
+The reviewer is **not** a host-only post-hoc LLM judge. It is a Harbor-sandboxed agent with read access to the original task and the cheating agent’s full trial. It can inspect the tests, environment, trajectory, and verifier output before writing its verdict. It does **not** re-run the original task verifier; `validate_review.py` only validates the reviewer’s JSON output. The optional `--harness llm` path is a convenience fallback that inlines the same evidence into one prompt.
 
 Reviewer evidence layout:
 
