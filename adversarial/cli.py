@@ -25,7 +25,7 @@ from .system_prompt import (
     stage_skill_for_harbor,
 )
 
-DEFAULT_MODEL = 'longcat-2.5-free'
+DEFAULT_MODEL = 'deepseek-v4.1-flash'
 # Harbor/LiteLLM needs a provider prefix. ``openai/`` means "OpenAI-compatible
 # HTTP API" (Alibaba compatible-mode, real OpenAI, etc.) — not "OpenAI the model".
 DEFAULT_AGENT_MODEL = DEFAULT_MODEL

@@ -11,7 +11,7 @@ from adversarial.cli import build_parser, harbor_agent_for, resolve_task
 
 def test_parser_defaults():
     args = build_parser().parse_args(['cheat-agent', '--task', '1012'])
-    assert args.model == 'longcat-2.5-free'
+    assert args.model == 'deepseek-v4.1-flash'
     assert args.harness == 'terminus-2'
     assert args.prompt_mode == 'system'
 

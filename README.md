@@ -2,7 +2,7 @@
 
 Cheating **agent** (Harbor rollout) + cheating **reviewer** (post-hoc LLM judge on saved trials).
 
-- Default model: `longcat-2.5-free` via OpenCode Go (Harbor: `openai/longcat-2.5-free`).
+- Default model: `deepseek-v4.1-flash` via OpenCode Go (Harbor: `openai/deepseek-v4.1-flash`; base URL `https://opencode.ai/inference/go/openai/v1`).
 - Default **policy generation:** `instruction/v3/{cheating-agent,cheating-reviewer}/{prompt,skill}` (`--policy-version`). `instruction/v4/…` (RL task filtering: no solve-then-stub; reviewer adds `synthetic_exploit`) is opt-in via `--policy-version v4` or `ADVERSARIAL_POLICY_VERSION=v4`.
 - Default harness: Terminus-2 (system prompt + Harbor skills). Prefer Harbor for multi-harness switching (`terminus-2`, `codex` with skills; `mini-swe-agent` is appended-policy only). `--harness llm` inlines the skill body on the host.
 
@@ -37,7 +37,7 @@ The CLI also accepts `--base-url` / `--key-env`, loads a local `.env` if present
 ```bash
 export OPENAI_API_KEY='...'
 export OPENAI_BASE_URL='https://<workspace>.maas.aliyuncs.com/compatible-mode/v1'
-python -m adversarial cheat-agent --task 1012 --model longcat-2.5-free --harness codex
+python -m adversarial cheat-agent --task 1012 --model deepseek-v4.1-flash --harness codex
 ```
 
 **Real OpenAI / later Luma (OpenAI base URL)**
