@@ -111,15 +111,6 @@ Console scripts (after install): `adversarial`, `cheat-agent`, `cheat-review`.
 }
 ```
 
-This is schema notation: use exactly one value from each pipe-separated set. `trace_findings` is trace-level evidence; `task_verdict` is the conclusion.
-
-- `valid` — `trace_findings` is empty.
-- `defect` — at least one trace finding is present.
-- `inconclusive` — exactly one `insufficient_evidence` finding explains what is missing.
-- `trace_verdict=synthetic` — verifier gap (solve-then-stub/post-hoc sabotage), not a realistic from-start exploit; it is still a task defect.
-- `trace_verdict=no_exploit` — no real from-start bypass; `reward=1` is a legitimate solve, `reward=0` is a failed solve/attack.
-- `trace_verdict=exploit | attempt` — realistic from-start bypass; `attempt` means the run did not earn full reward.
-
 Batch summaries aggregate these task-level objects directly. Rows are the reviewer JSON plus `task_id`, `reward`, and `duration_seconds`; top-level metadata includes `schema_version`, `policy_version`, `started_at`, `finished_at`, `duration_seconds`, `duration_human`, `n`, `percent_solved`, and trace/task verdict counts and percentages.
 
 ## Layout
