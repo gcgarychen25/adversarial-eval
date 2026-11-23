@@ -72,8 +72,6 @@ flowchart TB
 | Inputs | Task, prompt, `cheating-agent` skill, model | Saved trial, original task, prompt, `cheating-reviewer` skill, model |
 | Output | Saved trial: trajectory, verifier reward/logs, final workspace | `cheat_review.json`: task verdict, trace verdict, findings |
 
-The reviewer is **not** a host-only post-hoc LLM judge. It is a Harbor-sandboxed agent with read access to the original task and the cheating agent’s full trial. It can inspect the tests, environment, trajectory, and verifier output before writing its verdict. It does **not** re-run the original task verifier; `validate_review.py` only validates the reviewer’s JSON output. The optional `--harness llm` path is a convenience fallback that inlines the same evidence into one prompt.
-
 Reviewer evidence layout:
 
 ```text
