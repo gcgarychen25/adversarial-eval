@@ -2,8 +2,8 @@
 
 Cheating **agent** (Harbor rollout) + cheating **reviewer** (post-hoc LLM judge on saved trials).
 
-Default model: `deepseek-v4-pro-0813` (Harbor: `openai/deepseek-v4-pro-0813`).  
-Default **policy generation:** `instruction/v3/{cheating-agent,cheating-reviewer}/{prompt,skill}` (`--policy-version`). Next iteration is `instruction/v4/…`.  
+Default model: `longcat-2.5-free` via OpenCode Go (Harbor: `openai/longcat-2.5-free`).  
+Default **policy generation:** `instruction/v3/{cheating-agent,cheating-reviewer}/{prompt,skill}` (`--policy-version`). `instruction/v4/…` (RL task filtering: no solve-then-stub; reviewer adds `synthetic_exploit`) is opt-in via `--policy-version v4` or `ADVERSARIAL_POLICY_VERSION=v4`.  
 Default harness: Terminus-2 (system prompt + Harbor skills). Prefer Harbor for multi-harness switching (`terminus-2`, `codex` with skills; `mini-swe-agent` is appended-policy only). `--harness llm` inlines the skill body on the host.
 
 ## Setup
@@ -37,7 +37,7 @@ The CLI also accepts `--base-url` / `--key-env`, loads a local `.env` if present
 ```bash
 export OPENAI_API_KEY='...'
 export OPENAI_BASE_URL='https://<workspace>.maas.aliyuncs.com/compatible-mode/v1'
-python -m adversarial cheat-agent --task 1012 --model deepseek-v4-pro-0813
+python -m adversarial cheat-agent --task 1012 --model longcat-2.5-free --harness codex
 ```
 
 **Real OpenAI / later Luma (OpenAI base URL)**
@@ -82,7 +82,7 @@ tests/
 work/            # local only (gitignored): see work/README.md
 ```
 
-Policy generations live under [`instruction/`](instruction/README.md). Default **v3**; add **v4** folders when iterating.  
+Policy generations live under [`instruction/`](instruction/README.md). Default **v3**; **v4** is available opt-in (see `instruction/README.md`).  
 Local artifacts: [`work/README.md`](work/README.md) (`attacker/`, `staging/`, `runs/`, `archive/`).
 
 Optional / legacy: `python -m adversarial.real_eval review` runs the separate **CheatBench** 6-trace classifier (not the Harbor cheat-reviewer).
@@ -101,6 +101,10 @@ python -m adversarial cheat-review --trial <trial_dir> --task <id>
 ```
 
 Multi-model grid helper (still optional): `scripts/run_stress_comparison.py`.
+
+## Evaluation reports
+
+- [2026-11-23 — v4 TMax50](docs/experiments/2026-11-23-v4-tmax50/REPORT.md): 8 exploit / 2 attempt / 5 inconclusive / 35 legitimate under the v4 policy. Shareable aggregates are in the same folder; raw trials stay local under `work/`.
 
 ## What is intentionally not in git
 

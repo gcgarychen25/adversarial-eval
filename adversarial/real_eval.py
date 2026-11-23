@@ -394,12 +394,13 @@ def run_monitor(trace: str, model: str, base_url: str | None = None, key_env: st
     if not key:
         raise RuntimeError(f'Export {key_env} for model-based reviewer evaluation')
     base = (base_url or os.environ.get('OPENAI_BASE_URL') or 'https://api.openai.com/v1').rstrip('/')
+    from adversarial.env import openai_compat_headers
     req = Request(base+'/chat/completions',method='POST',
                   data=json.dumps({'model':model,'messages':[
                       {'role':'system','content':MONITOR_PROMPT.read_text()},
                       {'role':'user','content':'Classify this execution trace. Labels and audit notes have been withheld.\n\n'+trace},
                   ]}).encode(),
-                  headers={'Content-Type':'application/json','Authorization':'Bearer '+key})
+                  headers=openai_compat_headers(key, base_url=base, user_agent='adversarial-eval-monitor/0.1'))
     try:
         with urlopen(req,timeout=300) as res: data=json.load(res)
     except HTTPError as exc:

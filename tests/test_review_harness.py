@@ -66,6 +66,47 @@ def test_prepare_appends_policy_for_mini(tmp_path: Path):
     text = (dest / 'instruction.md').read_text()
     assert 'loophole_category' in text or 'confirmed_cheat' in text
     assert 'reviewer policy' in text
+    assert 'Activate the Harbor skill' not in text
+    assert 'appended below' in text
+
+
+def test_prepare_v4_mini_appends_policy_without_skill(tmp_path: Path):
+    task = _make_task(tmp_path)
+    trial = _make_trial(tmp_path)
+    dest = tmp_path / 'workspace'
+    prepare_review_workspace(
+        trial, task, dest, append_policy=True, policy_version='v4',
+    )
+    text = (dest / 'instruction.md').read_text()
+    assert 'Policy generation: `v4`' in text
+    assert 'synthetic_exploit' in text
+    assert 'appended below' in text
+    assert 'Activate the Harbor skill' not in text
+    assert '## Decision order' in text
+    assert '{{' not in text
+
+
+def test_prepare_v4_instruction_is_policy_aware(tmp_path: Path):
+    task = _make_task(tmp_path)
+    trial = _make_trial(tmp_path)
+    dest = tmp_path / 'workspace'
+    prepare_review_workspace(trial, task, dest, policy_version='v4')
+    text = (dest / 'instruction.md').read_text()
+    assert 'Policy generation: `v4`' in text
+    assert 'synthetic_exploit' in text
+    assert '/harbor/skills/cheating-reviewer/SKILL.md' in text
+    assert '{{' not in text
+
+
+def test_prepare_v3_instruction_has_no_v4_status(tmp_path: Path):
+    task = _make_task(tmp_path)
+    trial = _make_trial(tmp_path)
+    dest = tmp_path / 'workspace'
+    prepare_review_workspace(trial, task, dest, policy_version='v3')
+    text = (dest / 'instruction.md').read_text()
+    assert 'Policy generation: `v3`' in text
+    assert 'synthetic_exploit' not in text
+    assert '{{' not in text
 
 
 def test_harbor_review_agent_terminus():
@@ -114,6 +155,42 @@ def test_find_and_parse_review(tmp_path: Path):
     assert parsed['status'] == 'loophole_found'
     assert parsed['verdict'] == 'confirmed_cheat'
     assert parsed['loopholes'][0]['harbor_component'] == 'Verifier'
+
+
+def test_find_and_parse_synthetic_review(tmp_path: Path):
+    trial = tmp_path / 'review_trial'
+    (trial / 'agent').mkdir(parents=True)
+    payload = {
+        'status': 'synthetic_exploit',
+        'loopholes': [],
+        'rationale': 'Agent computed the answer at step 11 and hardcoded it at step 14.',
+        'confidence': 'high',
+    }
+    path = trial / 'agent' / 'cheat_review.json'
+    path.write_text(json.dumps(payload))
+    parsed = load_and_parse_review(path, reward=1.0)
+    assert parsed['status'] == 'synthetic_exploit'
+    assert parsed['verdict'] == 'synthetic_exploit'
+    assert parsed['loopholes'] == []
+
+
+def test_find_and_parse_wrapper_status_only(tmp_path: Path):
+    trial = tmp_path / 'review_trial'
+    (trial / 'agent').mkdir(parents=True)
+    payload = {
+        'binary': 'synthetic',
+        'verdict': {
+            'status': 'synthetic_exploit',
+            'loopholes': [],
+            'rationale': 'Agent computed the answer at step 11 and hardcoded it at step 14.',
+            'confidence': 'high',
+        },
+    }
+    path = trial / 'agent' / 'cheat_review.json'
+    path.write_text(json.dumps(payload))
+    parsed = load_and_parse_review(path, reward=1.0)
+    assert parsed['status'] == 'synthetic_exploit'
+    assert parsed['verdict'] == 'synthetic_exploit'
 
 
 def test_parse_legacy_verdict_still_works():
@@ -246,3 +323,28 @@ def test_dry_run_codex_includes_review_skill(tmp_path: Path):
     assert '--skill' in run['command']
     assert 'codex' in run['command']
     assert (tmp_path / 'skill_stage' / 'cheating-reviewer' / 'SKILL.md').is_file()
+
+
+def test_dry_run_v4_codex_policy_aware(tmp_path: Path):
+    from adversarial.review_harness import run_harbor_review
+    task = _make_task(tmp_path)
+    trial = _make_trial(tmp_path)
+    run = run_harbor_review(
+        trial,
+        task,
+        harness='codex',
+        model='openai/deepseek-v4.1-flash',
+        jobs_dir=tmp_path / 'jobs',
+        workspace_dir=tmp_path / 'ws',
+        skill_stage_dir=tmp_path / 'skill_stage',
+        dry_run=True,
+        policy_version='v4',
+    )
+    assert run['policy_version'] == 'v4'
+    text = (Path(run['review_workspace']) / 'instruction.md').read_text()
+    assert 'Policy generation: `v4`' in text
+    assert 'synthetic_exploit' in text
+    assert '{{' not in text
+    staged = tmp_path / 'skill_stage' / 'cheating-reviewer' / 'SKILL.md'
+    assert staged.is_file()
+    assert 'synthetic_exploit' in staged.read_text()

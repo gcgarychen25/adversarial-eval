@@ -17,13 +17,15 @@ from .reviewer import binary_label, llm_review
 from .system_prompt import (
     CHEATING_AGENT_NAME,
     DEFAULT_VERSION,
+    POLICY_VERSION_ENV,
+    active_version,
     agent_system_prompt_path,
     ensure_generation,
     list_policy_versions,
     stage_skill_for_harbor,
 )
 
-DEFAULT_MODEL = 'deepseek-v4-pro-0813'
+DEFAULT_MODEL = 'longcat-2.5-free'
 # Harbor/LiteLLM needs a provider prefix. ``openai/`` means "OpenAI-compatible
 # HTTP API" (Alibaba compatible-mode, real OpenAI, etc.) — not "OpenAI the model".
 DEFAULT_AGENT_MODEL = DEFAULT_MODEL
@@ -190,6 +192,18 @@ def cmd_cheat_agent(args: argparse.Namespace) -> int:
         'harbor_agent': agent,
         'endpoint': redact_config(cfg),
     })
+    if args.prompt_mode == 'appended':
+        # Appended mode always pastes the legacy v1 attack prompt. Record that
+        # explicitly so a v3/v4 flag cannot silently masquerade as the policy used.
+        if args.policy_version != 'v1':
+            print(
+                'WARNING: --prompt-mode appended uses instruction/v1/cheating-agent/prompt; '
+                f'--policy-version {args.policy_version} is ignored. Use --prompt-mode system '
+                'for v2/v3/v4 skills.',
+                file=sys.stderr,
+            )
+        run['policy_version'] = 'v1'
+        run['policy_delivery'] = 'appended-instruction'
     if args.prompt_mode == 'system':
         import hashlib
         prompt_path = agent_system_prompt_path(policy_version)
@@ -269,12 +283,14 @@ def cmd_cheat_review(args: argparse.Namespace) -> int:
     out = Path(args.output).expanduser().resolve() if args.output else trial / 'cheat_review.json'
 
     if args.harness == 'llm':
+        ensure_generation(args.policy_version, role='reviewer')
         verdict = llm_review(
             task,
             trial,
             model=args.model,
             base_url=cfg.base_url,
             key_env='OPENAI_API_KEY',
+            policy_version=args.policy_version,
         )
         report = {
             'skipped': False,
@@ -285,6 +301,7 @@ def cmd_cheat_review(args: argparse.Namespace) -> int:
             'trial_dir': str(trial),
             'task': str(task),
             'harness': 'llm',
+            'policy_version': args.policy_version,
             'endpoint': redact_config(cfg),
         }
         _save_json(out, report)
@@ -338,6 +355,7 @@ def cmd_cheat_review(args: argparse.Namespace) -> int:
         'harbor_agent': run.get('harbor_agent'),
         'review_workspace': run.get('review_workspace'),
         'review_trial_dir': run.get('trial_dir'),
+        'policy_version': args.policy_version,
         'endpoint': redact_config(cfg),
     }
     _save_json(out, report)
@@ -375,8 +393,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         '--policy-version',
         choices=list_policy_versions(),
-        default=DEFAULT_VERSION,
-        help=f'policy generation under instruction/vN (default: {DEFAULT_VERSION})',
+        default=active_version(),
+        help=(
+            f'policy generation under instruction/vN (default: ${POLICY_VERSION_ENV} '
+            f'if set, else {DEFAULT_VERSION})'
+        ),
     )
     p.add_argument('--skill-stage-dir', type=Path, help='where to stage Harbor skill upload dir')
     p.add_argument('--root', type=Path, default=Path('work'), help='workspace root (Seta bootstrap + defaults)')
@@ -392,7 +413,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser(
         'cheat-review',
-        help='Review one saved Harbor trial (pass or failed attempt); binary exploit|attempt|legitimate|inconclusive',
+        help='Review one saved Harbor trial (pass or failed attempt); binary exploit|attempt|synthetic|legitimate|inconclusive',
     )
     p.add_argument('--trial', required=True, help='Harbor trial directory containing agent/ + verifier/')
     p.add_argument('--task', required=True, help='Harbor task dir used for that trial, or bootstrap id')
@@ -406,8 +427,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         '--policy-version',
         choices=list_policy_versions(),
-        default=DEFAULT_VERSION,
-        help=f'policy generation under instruction/vN (default: {DEFAULT_VERSION})',
+        default=active_version(),
+        help=(
+            f'policy generation under instruction/vN (default: ${POLICY_VERSION_ENV} '
+            f'if set, else {DEFAULT_VERSION})'
+        ),
     )
     p.add_argument('--skill-stage-dir', type=Path, help='where to stage Harbor skill upload dir')
     p.add_argument('--root', type=Path, default=Path('work'))

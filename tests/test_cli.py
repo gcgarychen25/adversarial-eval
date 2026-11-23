@@ -11,15 +11,16 @@ from adversarial.cli import build_parser, harbor_agent_for, resolve_task
 
 def test_parser_defaults():
     args = build_parser().parse_args(['cheat-agent', '--task', '1012'])
-    assert args.model == 'deepseek-v4-pro-0813'
+    assert args.model == 'longcat-2.5-free'
     assert args.harness == 'terminus-2'
     assert args.prompt_mode == 'system'
 
 
 def test_normalize_harbor_model():
     from adversarial.cli import normalize_harbor_model
+    assert normalize_harbor_model('longcat-2.5-free') == 'openai/longcat-2.5-free'
+    assert normalize_harbor_model('openai/longcat-2.5-free') == 'openai/longcat-2.5-free'
     assert normalize_harbor_model('deepseek-v4-pro-0813') == 'openai/deepseek-v4-pro-0813'
-    assert normalize_harbor_model('openai/deepseek-v4-pro-0813') == 'openai/deepseek-v4-pro-0813'
 
 
 def test_codex_system_ok():

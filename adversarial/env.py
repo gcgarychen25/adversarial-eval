@@ -11,6 +11,7 @@ Optional local file (never commit): ``.env`` in the repo root with the same keys
 from __future__ import annotations
 
 import os
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -129,3 +130,26 @@ def redact_config(cfg: OpenAICompatConfig) -> dict:
         'key_present': bool(cfg.api_key),
         'source': cfg.source,
     }
+
+
+def openai_compat_headers(
+    api_key: str,
+    *,
+    base_url: str | None = None,
+    session_id: str | None = None,
+    user_agent: str = 'adversarial-eval/0.1',
+) -> dict[str, str]:
+    """HTTP headers for OpenAI-compatible Chat Completions.
+
+    OpenCode Go rejects requests without ``x-opencode-session`` (and prefers a
+    non-generic User-Agent). Other hosts ignore the extra header.
+    """
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {api_key}',
+        'User-Agent': user_agent,
+    }
+    base = (base_url or os.environ.get('OPENAI_BASE_URL') or '').lower()
+    if 'opencode.ai' in base:
+        headers['x-opencode-session'] = session_id or f'adv-{uuid.uuid4().hex}'
+    return headers

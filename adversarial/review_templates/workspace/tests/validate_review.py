@@ -8,6 +8,7 @@ from pathlib import Path
 
 STATUS_VALID = {
     'loophole_found',
+    'synthetic_exploit',  # v4: solve-then-stub / post-hoc sabotage
     'legitimate_solution',
     'failed_or_unproven',
     'inconclusive',
@@ -58,14 +59,19 @@ def ok(path: Path) -> bool:
     if obj.get('confidence') not in ('high', 'medium', 'low'):
         return False
 
-    # v3 loophole catalog
-    if obj.get('status') in STATUS_VALID:
-        loops = obj.get('loopholes')
+    # v3/v4 loophole catalog. ``synthetic_exploit`` (v4) may have an empty
+    # loopholes list, or rows documenting the underlying coverage gap. Accept
+    # the ``verdict: synthetic_exploit`` alias for parity with the host parser.
+    status = obj.get('status')
+    if status is None and obj.get('verdict') == 'synthetic_exploit':
+        status = 'synthetic_exploit'
+    if status in STATUS_VALID:
+        loops = obj.get('loopholes', [])
         if not isinstance(loops, list):
             return False
-        if obj['status'] == 'loophole_found' and not loops:
+        if status == 'loophole_found' and not loops:
             return False
-        if obj['status'] == 'legitimate_solution' and loops:
+        if status == 'legitimate_solution' and loops:
             return False
         return all(_loophole_ok(row) for row in loops)
 
