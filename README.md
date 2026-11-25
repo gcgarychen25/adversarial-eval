@@ -4,7 +4,7 @@ Cheating **agent** (Harbor rollout) + cheating **reviewer** (Harbor-sandboxed ag
 
 - Default model: `deepseek-v4.1-flash` via OpenCode Go (Harbor: `openai/deepseek-v4.1-flash`; base URL `https://opencode.ai/inference/go/openai/v1`).
 - Default **policy generation:** `instruction/v5/{cheating-agent,cheating-reviewer}/{prompt,skill}` (`--policy-version`). `v4` and `v3` remain selectable via `--policy-version` or `ADVERSARIAL_POLICY_VERSION`.
-- Default harness: Terminus-2 (system prompt + Harbor skills). Prefer Harbor for multi-harness switching (`terminus-2`, `codex` with skills; `mini-swe-agent` is appended-policy only). `--harness llm` inlines the skill body on the host.
+- Harness defaults: `terminus-2` for the single-task `cheat-agent` / `cheat-review` commands; `codex` for both agent and reviewer in `adversarial batch`. The recorded v5 batch used codex/codex; the v4 tmax50 run used codex agent + llm reviewer. Prefer Harbor for multi-harness switching (`terminus-2`, `codex` with skills; `mini-swe-agent` is appended-policy only). `--harness llm` inlines the skill body on the host.
 
 ## System architecture
 
