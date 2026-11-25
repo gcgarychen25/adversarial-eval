@@ -510,6 +510,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument('--no-cleanup', action='store_true', help='keep task images and staging dirs')
     p.add_argument('--keep-build-cache', action='store_true')
     p.add_argument('--quit-docker', action='store_true', help='quit Docker Desktop after the batch')
+    p.add_argument('--vm-hourly-rate', type=float, default=0.0,
+                   help='VM list price in USD/hour for per-task cost estimates')
+    p.add_argument('--vm-disk-gb', type=float, default=0.0)
+    p.add_argument('--vm-disk-type', default='hyperdisk-balanced')
+    p.add_argument('--vm-disk-monthly-rate', type=float, default=None)
+    p.add_argument('--vm-machine-type')
+    p.add_argument('--vm-started-at', help='VM creation time (ISO 8601) for lifetime cost')
+    p.add_argument('--opencode-monthly-limit', type=float, default=100.0,
+                   help='monthly OpenCode Go allowance in USD for usage-delta estimates')
+    p.add_argument('--no-opencode-usage', action='store_true',
+                   help='skip the account-level OpenCode usage snapshot')
     p.set_defaults(func=cmd_batch)
 
     return ap

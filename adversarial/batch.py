@@ -12,6 +12,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .costing import (
+    fetch_opencode_usage,
+    is_peak,
+    model_cost,
+    read_usage,
+    usage_delta,
+    vm_cost,
+)
 from .env import apply_openai_compat
 from .harness import read_reward
 from .reporting import build_summary, write_summary
@@ -27,6 +35,18 @@ def _now() -> datetime:
 
 def _iso(dt: datetime) -> str:
     return dt.isoformat().replace('+00:00', 'Z')
+
+
+def _parse_dt(value: str | None, default: datetime) -> datetime:
+    if not value:
+        return default
+    try:
+        parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    except ValueError:
+        return default
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _harbor_model(model: str) -> str:
@@ -183,7 +203,12 @@ def _review(task: Path, task_id: str, trial: Path, *, worker_dir: Path, policy_v
                 log_path=worker_dir / 'review.log')
     if proc.returncode != 0 or not output.is_file():
         raise RuntimeError(f'review failed for {task_id}; see {worker_dir / "review.log"}')
-    return load_and_parse_review(output, reward=read_reward(trial))
+    report = json.loads(output.read_text(encoding='utf-8'))
+    return {
+        'verdict': load_and_parse_review(output, reward=read_reward(trial)),
+        'review_trial_dir': report.get('review_trial_dir'),
+        'report': report,
+    }
 
 
 def _write_row(path: Path, row: dict) -> None:
@@ -213,6 +238,9 @@ def _completed(path: Path) -> set[str]:
 def _run_one(raw: str, *, root: Path, jobs_dir: Path, policy_version: str, model: str,
              agent_harness: str, review_harness: str, timeout: int,
              prefetch_timeout: int, do_prefetch: bool, do_cleanup: bool,
+             workers: int, vm_hourly_rate: float, vm_disk_gb: float,
+             vm_disk_monthly_rate: float | None, vm_machine_type: str | None,
+             vm_disk_type: str,
              env: dict, cwd: Path, results_path: Path, completed: set[str]) -> dict:
     started = _now()
     row = {'task_id': raw, 'status': 'error', 'started_at': _iso(started)}
@@ -237,17 +265,64 @@ def _run_one(raw: str, *, root: Path, jobs_dir: Path, policy_version: str, model
                                agent_harness=agent_harness, timeout=timeout,
                                env=env, cwd=cwd)
         trial = Path(agent_summary['trial_dir'])
-        verdict = _review(task, task_id, trial, worker_dir=worker_dir,
-                          policy_version=policy_version, model=model,
-                          review_harness=review_harness, timeout=timeout,
-                          env=env, cwd=cwd)
+        review_result = _review(task, task_id, trial, worker_dir=worker_dir,
+                                policy_version=policy_version, model=model,
+                                review_harness=review_harness, timeout=timeout,
+                                env=env, cwd=cwd)
+        verdict = review_result['verdict']
         if verdict.get('schema_version') != 'v5':
             raise RuntimeError(f'reviewer did not emit v5 for {task_id}')
         finished = _now()
         duration = int((finished - started).total_seconds())
+
+        agent_usage = read_usage(trial)
+        review_trial_dir = review_result.get('review_trial_dir')
+        review_usage = read_usage(Path(review_trial_dir)) if review_trial_dir else {
+            'available': False, 'input_tokens': 0, 'cached_tokens': 0,
+            'output_tokens': 0, 'total_tokens': 0,
+        }
+        peak = is_peak(started) and is_peak(finished)
+        agent_cost = model_cost(
+            model, agent_usage['input_tokens'], agent_usage['cached_tokens'],
+            agent_usage['output_tokens'], peak=peak,
+        )
+        review_cost = model_cost(
+            model, review_usage['input_tokens'], review_usage['cached_tokens'],
+            review_usage['output_tokens'], peak=peak,
+        )
+        allocated_seconds = duration / max(1, workers)
+        vm_share = vm_cost(
+            machine_type=vm_machine_type, seconds=allocated_seconds,
+            disk_gb=vm_disk_gb, disk_type=vm_disk_type,
+            hourly_rate=vm_hourly_rate, disk_monthly_rate=vm_disk_monthly_rate,
+        )
+        model_list = (
+            float(agent_cost.get('list_cost_usd') or 0)
+            + float(review_cost.get('list_cost_usd') or 0)
+        )
+        model_allowance = (
+            float(agent_cost.get('estimated_allowance_usd') or 0)
+            + float(review_cost.get('estimated_allowance_usd') or 0)
+        )
+        vm_share_cost = float(vm_share.get('estimated_total_cost_usd') or 0)
+        row['cost'] = {
+            'agent': agent_cost,
+            'reviewer': review_cost,
+            'model': {
+                'list_cost_usd': round(model_list, 8),
+                'estimated_allowance_usd': round(model_allowance, 8),
+            },
+            'vm': {
+                'allocated_seconds': round(allocated_seconds, 1),
+                'estimated_cost_usd': round(vm_share_cost, 8),
+            },
+            'estimated_total_cost_usd': round(model_allowance + vm_share_cost, 8),
+        }
+
         review_path = trial / 'cheat_review.json'
         report = json.loads(review_path.read_text())
         report['duration_seconds'] = duration
+        report['cost'] = row['cost']
         review_path.write_text(json.dumps(report, indent=2) + '\n')
         row.update({
             'status': 'ok',
@@ -259,6 +334,7 @@ def _run_one(raw: str, *, root: Path, jobs_dir: Path, policy_version: str, model
             'trace_findings': verdict.get('trace_findings'),
             'confidence': verdict.get('confidence'),
             'trial_dir': str(trial),
+            'review_trial_dir': review_trial_dir,
         })
         return row
     except Exception as exc:
@@ -291,15 +367,20 @@ def run_batch(args) -> int:
     jobs_dir.mkdir(parents=True, exist_ok=True)
     apply_openai_compat(require_key=True)
     env = os.environ.copy()
+    usage_before = None if args.no_opencode_usage else fetch_opencode_usage()
     results_path = jobs_dir / 'RESULTS.jsonl'
     prior_rows = _read_results(results_path) if args.resume else []
     completed = _completed(results_path) if args.resume else set()
     started = _now()
+    vm_started = _parse_dt(args.vm_started_at, started)
     print(json.dumps({
         'event': 'batch_start', 'n_tasks': len(tasks), 'workers': workers,
         'policy_version': args.policy_version, 'model': args.model,
         'agent_harness': args.agent_harness, 'review_harness': args.review_harness,
         'jobs_dir': str(jobs_dir),
+        'vm_hourly_rate': args.vm_hourly_rate,
+        'vm_disk_gb': args.vm_disk_gb,
+        'opencode_usage': usage_before is not None,
     }), flush=True)
 
     rows = []
@@ -311,6 +392,11 @@ def run_batch(args) -> int:
                 agent_harness=args.agent_harness, review_harness=args.review_harness,
                 timeout=args.timeout, prefetch_timeout=args.prefetch_timeout,
                 do_prefetch=not args.no_prefetch, do_cleanup=not args.no_cleanup,
+                workers=workers, vm_hourly_rate=args.vm_hourly_rate,
+                vm_disk_gb=args.vm_disk_gb,
+                vm_disk_monthly_rate=args.vm_disk_monthly_rate,
+                vm_machine_type=args.vm_machine_type,
+                vm_disk_type=args.vm_disk_type,
                 env=env, cwd=cwd, results_path=results_path, completed=completed,
             ): raw for raw in tasks
         }
@@ -321,7 +407,26 @@ def run_batch(args) -> int:
                 'task_id', 'status', 'reward', 'task_verdict', 'trace_verdict', 'duration_seconds'
             )}), flush=True)
 
+    usage_after = None if args.no_opencode_usage else fetch_opencode_usage()
+    opencode_usage = usage_delta(
+        usage_before, usage_after, monthly_limit_usd=args.opencode_monthly_limit,
+    )
     finished = _now()
+    vm = None
+    if args.vm_machine_type or args.vm_hourly_rate or args.vm_disk_gb:
+        vm = vm_cost(
+            machine_type=args.vm_machine_type, seconds=(finished - vm_started).total_seconds(),
+            disk_gb=args.vm_disk_gb, disk_type=args.vm_disk_type,
+            hourly_rate=args.vm_hourly_rate,
+            disk_monthly_rate=args.vm_disk_monthly_rate,
+        )
+        vm['started_at'] = _iso(vm_started)
+        vm['finished_at'] = _iso(finished)
+    row_costs = {
+        row['task_id']: row['cost']
+        for row in prior_rows + rows
+        if row.get('status') == 'ok' and row.get('cost')
+    }
     successful = [Path(r['trial_dir']) for r in prior_rows + rows
                   if r.get('status') == 'ok' and r.get('trial_dir')]
     if successful:
@@ -331,6 +436,10 @@ def run_batch(args) -> int:
             finished_at=finished,
             policy_version=args.policy_version,
             model=args.model,
+            row_costs=row_costs,
+            workers=workers,
+            vm=vm,
+            opencode_usage=opencode_usage,
         )
         write_summary(output, summary)
     else:
@@ -345,5 +454,6 @@ def run_batch(args) -> int:
         'error': sum(1 for r in rows if r.get('status') == 'error'),
         'summary': str(output) if summary else None,
         'duration_seconds': int((finished - started).total_seconds()),
+        'cost': (summary or {}).get('cost'),
     }, indent=2), flush=True)
     return 0 if all(r.get('status') in ('ok', 'skipped') for r in rows) else 1

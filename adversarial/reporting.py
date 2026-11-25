@@ -5,6 +5,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .costing import aggregate_costs
 from .harness import read_reward
 from .reviewer import V5_TASK_VERDICTS, V5_TRACE_VERDICTS, parse_verdict
 
@@ -54,6 +55,10 @@ def build_summary(
     finished_at: str | datetime,
     policy_version: str = 'v5',
     model: str | None = None,
+    row_costs: dict[str, dict] | None = None,
+    workers: int | None = None,
+    vm: dict | None = None,
+    opencode_usage: dict | None = None,
 ) -> dict:
     """Build a V5 summary directly from per-trial ``cheat_review.json`` files."""
     start = _as_datetime(started_at)
@@ -69,7 +74,7 @@ def build_summary(
             )
         task_value = verdict.get('task_id') or report.get('task')
         task_id = Path(task_value).name if task_value else Path(trial).parent.name
-        rows.append({
+        row = {
             'task_id': task_id,
             'reward': verdict.get('reward'),
             'duration_seconds': report.get('duration_seconds'),
@@ -77,7 +82,13 @@ def build_summary(
             'trace_verdict': verdict['trace_verdict'],
             'trace_findings': verdict['trace_findings'],
             'confidence': verdict['confidence'],
-        })
+        }
+        cost = row_costs.get(task_id) if row_costs else None
+        if cost is None:
+            cost = report.get('cost')
+        if cost:
+            row['cost'] = cost
+        rows.append(row)
 
     trace_counts = {key: 0 for key in sorted(V5_TRACE_VERDICTS)}
     task_counts = {key: 0 for key in sorted(V5_TASK_VERDICTS)}
@@ -87,7 +98,7 @@ def build_summary(
     n = len(rows)
     solved = sum(1 for row in rows if row.get('reward') is not None and row['reward'] >= 1)
 
-    return {
+    summary = {
         'schema_version': 'v5',
         'policy_version': policy_version,
         'model': model,
@@ -104,6 +115,13 @@ def build_summary(
         'task_verdict_pct': {key: _pct(value, n) for key, value in task_counts.items()},
         'rows': rows,
     }
+    if workers is not None:
+        summary['workers'] = workers
+    if row_costs or vm or opencode_usage or any('cost' in row for row in rows):
+        summary['cost'] = aggregate_costs(
+            rows, vm=vm, opencode_usage=opencode_usage,
+        )
+    return summary
 
 
 def write_summary(path: Path, summary: dict) -> Path:

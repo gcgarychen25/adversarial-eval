@@ -273,6 +273,65 @@ def test_build_summary_v5(tmp_path: Path):
     assert summary['task_verdict_counts']['defect'] == 1
 
 
+def test_build_summary_includes_cost(tmp_path: Path):
+    trial = _make_trial(tmp_path / 'cost', reward='1')
+    (trial / 'cheat_review.json').write_text(json.dumps({
+        'task': str(tmp_path / 'task_cost'),
+        'reward': 1.0,
+        'verdict': _v5(task='valid', trace='no_exploit', findings=[]),
+    }))
+    row_cost = {
+        'agent': {'input_tokens': 100, 'cached_tokens': 50, 'output_tokens': 10,
+                  'list_cost_usd': 0.01, 'estimated_allowance_usd': 0.006},
+        'reviewer': {'input_tokens': 200, 'cached_tokens': 100, 'output_tokens': 20,
+                     'list_cost_usd': 0.02, 'estimated_allowance_usd': 0.012},
+        'vm': {'allocated_seconds': 30, 'estimated_cost_usd': 0.03},
+        'estimated_total_cost_usd': 0.048,
+    }
+    summary = build_summary(
+        [trial],
+        started_at='2026-11-23T02:00:00Z',
+        finished_at='2026-11-23T02:30:00Z',
+        policy_version='v5',
+        model='deepseek-v4.1-flash',
+        row_costs={'task_cost': row_cost},
+        workers=2,
+        vm={'estimated_total_cost_usd': 0.06},
+        opencode_usage={'monthly': {'percent_delta': 1}},
+    )
+    assert summary['workers'] == 2
+    assert summary['rows'][0]['cost'] == row_cost
+    assert summary['cost']['model']['estimated_allowance_usd'] == 0.018
+    assert summary['cost']['estimated_total_cost_usd'] == 0.078
+
+
+def test_build_summary_reads_cost_from_review(tmp_path: Path):
+    trial = _make_trial(tmp_path / 'review-cost', reward='1')
+    row_cost = {
+        'agent': {'input_tokens': 10, 'cached_tokens': 0, 'output_tokens': 2,
+                  'list_cost_usd': 0.01, 'estimated_allowance_usd': 0.006},
+        'reviewer': {'input_tokens': 20, 'cached_tokens': 0, 'output_tokens': 3,
+                     'list_cost_usd': 0.02, 'estimated_allowance_usd': 0.012},
+        'vm': {'allocated_seconds': 10, 'estimated_cost_usd': 0.03},
+        'estimated_total_cost_usd': 0.048,
+    }
+    (trial / 'cheat_review.json').write_text(json.dumps({
+        'task': str(tmp_path / 'task_review_cost'),
+        'reward': 1.0,
+        'verdict': _v5(task='valid', trace='no_exploit', findings=[]),
+        'cost': row_cost,
+    }))
+    summary = build_summary(
+        [trial],
+        started_at='2026-11-23T02:00:00Z',
+        finished_at='2026-11-23T02:30:00Z',
+        policy_version='v5',
+        model='deepseek-v4.1-flash',
+    )
+    assert summary['rows'][0]['cost'] == row_cost
+    assert summary['cost']['estimated_total_cost_usd'] == 0.048
+
+
 def test_cli_summarize_v5(tmp_path: Path, monkeypatch):
     t1 = _make_trial(tmp_path / 'one', reward='1')
     (t1 / 'cheat_review.json').write_text(json.dumps({

@@ -28,6 +28,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
 STATE_DIR = REPO / 'work' / 'gcp-batch'
 STATE_PATH = STATE_DIR / 'state.json'
 DEFAULT_IMAGE = 'projects/ubuntu-os-cloud/global/images/family/ubuntu-2404-lts-amd64'
@@ -547,6 +549,9 @@ def cmd_up(args: argparse.Namespace) -> int:
         'remote_dir': args.remote_dir,
         'gcs_bucket': bucket,
         'service_account': service_account,
+        'machine_type': args.machine_type,
+        'disk_size_gb': args.disk_size_gb,
+        'disk_type': args.disk_type,
         'created_at': _now(),
     }
     _save_state(state)
@@ -599,9 +604,18 @@ def cmd_run(args: argparse.Namespace) -> int:
     state = _state()
     if not state.get('ip'):
         raise SystemExit('No VM state; run `gcp_batch.py up` first')
+    from adversarial.costing import DISK_MONTHLY_RATES, VM_HOURLY_RATES
+
     jobs_dir = args.jobs_dir
     output = args.output or f'{jobs_dir}/SUMMARY.json'
     remote = state['remote_dir']
+    machine_type = state.get('machine_type', 'c4d-highcpu-8')
+    disk_type = state.get('disk_type', 'hyperdisk-balanced')
+    disk_gb = float(state.get('disk_size_gb', 100))
+    hourly_rate = VM_HOURLY_RATES.get(machine_type, 0.0)
+    disk_rate = DISK_MONTHLY_RATES.get(disk_type, 0.0)
+    started_arg = (f'--vm-started-at {shlex.quote(state["created_at"])} '
+                   if state.get('created_at') else '')
     _log('Syncing repository and task list…')
     _sync_repo(state)
     auto_delete = not args.no_auto_delete
@@ -630,6 +644,11 @@ def cmd_run(args: argparse.Namespace) -> int:
         f'--agent-harness {q(args.agent_harness)} '
         f'--review-harness {q(args.review_harness)} '
         f'--jobs-dir {q(jobs_dir)} --output {q(output)} '
+        f'--vm-hourly-rate {hourly_rate} --vm-disk-gb {disk_gb} '
+        f'--vm-disk-type {q(disk_type)} --vm-disk-monthly-rate {disk_rate} '
+        f'--vm-machine-type {q(machine_type)} {started_arg}'
+        f'--opencode-monthly-limit {args.opencode_monthly_limit} '
+        f'{"--no-opencode-usage " if args.no_opencode_usage else ""}'
         f'{"" if args.resume else "--no-resume "}'
     ).rstrip()
     script = _batch_wrapper_script(
@@ -807,6 +826,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument('--no-resume', dest='resume', action='store_false')
     run.add_argument('--no-auto-delete', action='store_true',
                      help='keep the VM running after the batch (default: upload results and delete)')
+    run.add_argument('--opencode-monthly-limit', type=float, default=100.0,
+                     help='monthly OpenCode Go allowance in USD (default: 100)')
+    run.add_argument('--no-opencode-usage', action='store_true')
     run.set_defaults(func=cmd_run)
 
     status = sub.add_parser('status', help='show tmux output and latest results')

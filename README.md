@@ -140,6 +140,42 @@ The runner uses the Compute Engine REST API and plain SSH, so it does not depend
 
 At list price, `c4d-highcpu-8` is about **$0.32/hour** in `us-central1`. The two-task validation used about **11 minutes end-to-end**, or roughly **$0.06 of VM time**; model tokens are billed separately. Use `--machine-type c4d-highcpu-4` (about $0.16/hour) for a cheaper, slower run.
 
+### Cost tracking
+
+Each successful task row now carries a `cost` block:
+
+```json
+{
+  "agent": {
+    "input_tokens": 87368,
+    "cached_tokens": 75520,
+    "output_tokens": 4929,
+    "list_cost_usd": 0.0099,
+    "estimated_allowance_usd": 0.0060
+  },
+  "reviewer": {
+    "input_tokens": 223566,
+    "cached_tokens": 189440,
+    "output_tokens": 6749,
+    "list_cost_usd": 0.0195,
+    "estimated_allowance_usd": 0.0117
+  },
+  "model": {
+    "list_cost_usd": 0.0294,
+    "estimated_allowance_usd": 0.0176
+  },
+  "vm": {
+    "allocated_seconds": 343,
+    "estimated_cost_usd": 0.0313
+  },
+  "estimated_total_cost_usd": 0.049
+}
+```
+
+`SUMMARY.json` also gets top-level `workers`, `vm`, and `cost` blocks. Model costs come from the trial `result.json` token totals; `estimated_allowance_usd` is the OpenCode Go share (currently 60% of list price), while `list_cost_usd` is the public list price. The GCP runner passes the machine type, disk size, hourly rate, and VM creation time, so the `vm` block estimates compute + disk cost. Local Docker runs record model cost but leave VM cost at zero.
+
+The batch also snapshots the account-level OpenCode usage endpoint before and after a run, so `cost.opencode_usage` reports the rolling/weekly/monthly percentage delta. The endpoint rounds to whole percentages, so it is a coarse upper bound; the token-based per-task estimate is more precise. Pass `--opencode-monthly-limit 200` if the Go Plus allowance applies. Top-level VM cost uses the full VM lifetime, while `allocated_vm_cost_usd` is the sum of task shares and `unallocated_vm_cost_usd` covers startup and idle time. Actual GCP invoices require Cloud Billing export to BigQuery, which is not enabled by default.
+
 Review contracts (harness-agnostic): evidence layout `/evidence/{trial,task,out}`, policy `instruction/vN/cheating-reviewer`, output `cheat_review.json`. Failed attacks (reward &lt; 1) are reviewed too when they may reveal a real loophole.
 
 Console scripts (after install): `adversarial`, `cheat-agent`, `cheat-review`.
